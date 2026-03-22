@@ -29,12 +29,9 @@ ScriptPilot is a terminal UI application that lets users create, manage, and exe
 - `content: str` — script source stored inline
 - `args: list[ScriptArg] = []`
 - `timeout: int = 60`
-- `created_at: datetime`
-- `updated_at: datetime`
 
 **AppConfig:**
 - `default_model: str = "openai/gpt-4o"`
-- `default_script_dir: str = "~/.scriptpilot/scripts/"`
 
 ### Storage (`storage.py`)
 
@@ -45,11 +42,15 @@ ScriptPilot is a terminal UI application that lets users create, manage, and exe
 
 ### Key Decision: Inline Content
 
-Script content is stored inline in `scripts.json`, not as file path references. Scripts are written to temp files for execution. This eliminates orphaned file references and the "invalid script path" error class.
+Script content is stored inline in `scripts.json`, not as file path references. Scripts are written to temp files for execution. This eliminates orphaned file references and the "invalid script path" error class entirely.
+
+**PRD deviation:** The PRD stores scripts as file path references with a `"path"` field. Inline storage supersedes this, making the PRD's "Invalid script path → Remove from list, show warning" error case no longer applicable.
 
 ### API Key
 
 Read from `OPENROUTER_API_KEY` environment variable. No config file storage.
+
+**PRD deviation:** The PRD includes an editable API key field in settings. This spec uses an environment variable instead because: (1) it follows the standard convention used by OpenAI, Anthropic, and other API providers, (2) it avoids storing secrets in plaintext config files, and (3) it's simpler to implement. The settings screen shows whether the env var is set so users know if AI features are available.
 
 ### Dependencies for Executed Scripts
 
@@ -110,7 +111,7 @@ Generated scripts are typically short. Simple spinner in UI while waiting. No st
 
 ### App (`app.py`)
 
-Textual `App` subclass. Global key bindings: `q` (quit), `s` (settings), `g` (generate), `n` (new script). Loads scripts from `ScriptStore` on startup.
+Textual `App` subclass. Global key bindings: `q` (quit), `s` (settings), `g` (generate), `n` (new script). Loads scripts from `ScriptStore` on startup. Supports light/dark themes via Textual's built-in `toggle_dark()`, bound to `t` key.
 
 ### Main Screen (`screens/main.py`)
 
@@ -122,7 +123,7 @@ Three-panel layout:
   - Script selected: name, description, type, args summary, timeout
   - Script running: real-time output (`RichLog`)
   - Script finished: output + exit code/duration footer
-- **Bottom bar** — `[Enter] Run  [e] Edit  [d] Delete  [g] Generate  [n] New  [s] Settings  [q] Quit`
+- **Bottom bar** — `[Enter/r] Run  [e] Edit  [d] Delete  [g] Generate  [n] New  [s] Settings  [t] Theme  [q] Quit`
 - `Tab` switches focus between panels
 - `d` shows confirmation dialog before deleting
 
@@ -130,7 +131,6 @@ Three-panel layout:
 
 Modal screen (overlays main):
 - Default model (select from fetched model list)
-- Default script directory (input)
 - API key status indicator (shows whether env var is set, not editable)
 - Save/Cancel buttons
 
@@ -142,12 +142,24 @@ Modal screen:
 - "Save" prompts for name and description
 - "Retry" to regenerate, "Cancel" to discard
 
+### Run Screen (`screens/run.py`)
+
+Modal that appears when executing a script that has defined arguments:
+- Displays script name at top
+- For each arg: labeled input field, pre-filled with default value if set
+- Required args validated before allowing submission
+- Boolean args rendered as checkboxes/switches
+- "Run" and "Cancel" buttons
+- If script has no args, this modal is skipped — execution starts immediately
+
 ### Edit/Create Screen (`screens/edit.py`)
 
 Modal screen for both new (`n`) and edit (`e`):
 - Name `Input`, description `Input`, type `Select`, timeout `Input`, content `TextArea`
 - Args editor: add/remove rows with name, type, required, default fields
 - Save/Cancel buttons
+
+**PRD deviation — editor preference:** The PRD includes an "editor preference" setting for manual edits. Since this spec uses an inline TextArea for all editing (no external editor launch), this setting is not applicable and is intentionally omitted.
 
 ---
 
@@ -195,7 +207,8 @@ script-pilot/
 │       │   ├── main.py         # Main three-panel screen
 │       │   ├── settings.py     # Settings modal
 │       │   ├── generate.py     # AI generation modal
-│       │   └── edit.py         # Script create/edit modal
+│       │   ├── edit.py         # Script create/edit modal
+│       │   └── run.py          # Argument input modal
 │       └── widgets/
 │           ├── __init__.py
 │           ├── script_list.py  # Left panel list
@@ -235,11 +248,12 @@ script-pilot/
 | Key | Action |
 |-----|--------|
 | j/k, arrows | Navigate script list |
-| Enter | Execute selected script |
+| Enter, r | Execute selected script (shows arg form if script has args) |
 | e | Edit selected script |
 | d | Delete selected script |
 | n | New manual script |
 | g | Generate script with AI |
 | s | Open settings |
+| t | Toggle light/dark theme |
 | q | Quit |
 | Tab | Switch focus between panels |
