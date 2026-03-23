@@ -4,6 +4,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Footer, Header, Label
+from textual.worker import Worker, WorkerState
 
 from scriptpilot.models import Script
 from scriptpilot.storage import ScriptStore
@@ -126,10 +127,21 @@ class MainScreen(Screen):
             except InterpreterNotFoundError as e:
                 panel.show_error(str(e))
                 self.notify(str(e), severity="error")
+            except Exception as e:
+                panel.show_error(f"Error: {e}")
+                self.notify(str(e), severity="error")
             finally:
                 self._running = False
 
-        self.run_worker(run(), name="execute", exclusive=True)
+        self.run_worker(run(), name="execute")
+
+    def on_worker_state_changed(self, event: Worker.StateChanged):
+        if event.worker.name == "execute" and event.state in (
+            WorkerState.SUCCESS,
+            WorkerState.ERROR,
+            WorkerState.CANCELLED,
+        ):
+            self._running = False
 
     def _refresh_list(self):
         self.query_one(ScriptList).update_scripts(self._store.list())
