@@ -5,6 +5,7 @@ import respx
 from scriptpilot.openrouter import (
     OpenRouterClient,
     AuthenticationError,
+    OpenRouterConnectionError,
     RateLimitError,
     strip_markdown_fences,
 )
@@ -106,3 +107,21 @@ class TestOpenRouterClient:
         models = await client.list_models()
         assert len(models) == 2
         assert models[0]["id"] == "openai/gpt-4o"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_server_error(self, client):
+        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+            return_value=httpx.Response(500, json={"error": "server error"})
+        )
+        with pytest.raises(OpenRouterConnectionError):
+            await client.generate_script("x", "bash", "openai/gpt-4o")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_network_error(self, client):
+        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+            side_effect=httpx.ConnectError("Connection refused")
+        )
+        with pytest.raises(OpenRouterConnectionError):
+            await client.generate_script("x", "bash", "openai/gpt-4o")

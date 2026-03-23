@@ -45,28 +45,31 @@ class OpenRouterClient:
         self, description: str, language: str, model: str
     ) -> str:
         """Generate a script from a natural language description."""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{BASE_URL}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self._api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {
-                            "role": "user",
-                            "content": (
-                                f"Write a {language} script that does the following:\n\n"
-                                f"{description}"
-                            ),
-                        },
-                    ],
-                },
-                timeout=60,
-            )
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{BASE_URL}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {
+                                "role": "user",
+                                "content": (
+                                    f"Write a {language} script that does the following:\n\n"
+                                    f"{description}"
+                                ),
+                            },
+                        ],
+                    },
+                    timeout=60,
+                )
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            raise OpenRouterConnectionError(f"Could not reach OpenRouter: {e}") from e
 
         if response.status_code == 401:
             raise AuthenticationError("Invalid API key")
@@ -81,11 +84,14 @@ class OpenRouterClient:
 
     async def list_models(self) -> list[dict]:
         """Fetch available models from OpenRouter."""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{BASE_URL}/models",
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                timeout=30,
-            )
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{BASE_URL}/models",
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    timeout=30,
+                )
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            raise OpenRouterConnectionError(f"Could not reach OpenRouter: {e}") from e
         response.raise_for_status()
         return response.json()["data"]

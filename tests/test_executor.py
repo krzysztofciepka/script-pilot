@@ -98,3 +98,16 @@ class TestExecutor:
         from scriptpilot.executor import _get_interpreter
         assert _get_interpreter("bash") is not None
         assert _get_interpreter("python") is not None
+
+    @pytest.mark.asyncio
+    async def test_interpreter_not_found_raises(self, monkeypatch):
+        import shutil
+        monkeypatch.setattr(shutil, "which", lambda cmd: None)
+        script = Script(
+            name="missing",
+            description="missing interpreter",
+            type="bash",
+            content="echo hi",
+        )
+        with pytest.raises(InterpreterNotFoundError, match="bash not found"):
+            await execute_script(script)
