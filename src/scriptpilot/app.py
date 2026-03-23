@@ -63,8 +63,10 @@ class ScriptPilotApp(App):
         def on_result(script: Script | None):
             if script:
                 self._store.add(script)
-                main = self.query_one(MainScreen)
-                main._refresh_list()
+                for screen in self.screen_stack:
+                    if isinstance(screen, MainScreen):
+                        screen._refresh_list()
+                        break
                 self.notify(f"Script '{script.name}' saved")
 
         self.push_screen(
