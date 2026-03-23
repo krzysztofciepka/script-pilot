@@ -4,7 +4,6 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Footer, Header, Label
-from textual.worker import Worker, WorkerState
 
 from scriptpilot.models import Script
 from scriptpilot.storage import ScriptStore
@@ -35,7 +34,6 @@ class MainScreen(Screen):
         super().__init__()
         self._store = store
         self._selected_script: Script | None = None
-        self._running = False
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -46,8 +44,7 @@ class MainScreen(Screen):
 
     def on_script_selected(self, event: ScriptSelected):
         self._selected_script = event.script
-        if not self._running:
-            self.query_one(MainPanel).show_script_details(event.script)
+        self.query_one(MainPanel).show_script_details(event.script)
 
     def action_new_script(self):
         def on_result(script: Script | None):
@@ -96,9 +93,6 @@ class MainScreen(Screen):
         if not self._selected_script:
             self.notify("No script selected", severity="warning")
             return
-        if self._running:
-            self.notify("A script is already running", severity="warning")
-            return
 
         script = self._selected_script
         if script.args:
@@ -112,7 +106,6 @@ class MainScreen(Screen):
             self._execute(script)
 
     def _execute(self, script: Script, arg_values: list[str] | None = None):
-        self._running = True
         panel = self.query_one(MainPanel)
         panel.show_running(script)
 
@@ -130,18 +123,8 @@ class MainScreen(Screen):
             except Exception as e:
                 panel.show_error(f"Error: {e}")
                 self.notify(str(e), severity="error")
-            finally:
-                self._running = False
 
-        self.run_worker(run(), name="execute")
-
-    def on_worker_state_changed(self, event: Worker.StateChanged):
-        if event.worker.name == "execute" and event.state in (
-            WorkerState.SUCCESS,
-            WorkerState.ERROR,
-            WorkerState.CANCELLED,
-        ):
-            self._running = False
+        self.run_worker(run(), name="execute", exclusive=True)
 
     def _refresh_list(self):
         self.query_one(ScriptList).update_scripts(self._store.list())
