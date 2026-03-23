@@ -9,7 +9,7 @@ from textual.worker import Worker, WorkerState
 from scriptpilot.models import Script
 from scriptpilot.storage import ScriptStore
 from scriptpilot.executor import execute_script, InterpreterNotFoundError
-from scriptpilot.widgets.script_list import ScriptList, ScriptSelected, ScriptRunRequested
+from scriptpilot.widgets.script_list import ScriptList, ScriptSelected
 from scriptpilot.widgets.main_panel import MainPanel
 from scriptpilot.screens.edit import EditScreen
 from scriptpilot.screens.run import RunScreen
@@ -46,11 +46,8 @@ class MainScreen(Screen):
 
     def on_script_selected(self, event: ScriptSelected):
         self._selected_script = event.script
-        self.query_one(MainPanel).show_script_details(event.script)
-
-    def on_script_run_requested(self, event: ScriptRunRequested):
-        self._selected_script = event.script
-        self.action_run_script()
+        if not self._running:
+            self.query_one(MainPanel).show_script_details(event.script)
 
     def action_new_script(self):
         def on_result(script: Script | None):

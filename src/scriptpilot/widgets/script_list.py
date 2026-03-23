@@ -18,13 +18,6 @@ class ScriptSelected(Message):
         self.script = script
 
 
-class ScriptRunRequested(Message):
-    """Posted when a script is activated (Enter/click) in the list."""
-
-    def __init__(self, script: Script):
-        super().__init__()
-        self.script = script
-
 
 class ScriptList(Widget):
     """Left panel listing saved scripts."""
@@ -74,4 +67,4 @@ class ScriptList(Widget):
     def on_list_view_selected(self, event: ListView.Selected):
         script = self._find_script(event.item.name)
         if script:
-            self.post_message(ScriptRunRequested(script))
+            self.post_message(ScriptSelected(script))
