@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Vertical, Horizontal
+from textual.containers import Vertical, VerticalScroll, Horizontal
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, TextArea
@@ -37,19 +37,24 @@ class EditScreen(ModalScreen[Script | None]):
         border: solid $primary;
         padding: 1 2;
     }
+    EditScreen #edit-scroll {
+        height: 1fr;
+    }
     EditScreen Input {
         margin-bottom: 1;
     }
     EditScreen Select {
         margin-bottom: 1;
     }
-    EditScreen TextArea {
-        height: 1fr;
+    EditScreen #content-area {
+        min-height: 10;
+        height: 15;
         margin-bottom: 1;
     }
     EditScreen #button-bar {
         height: 3;
         align: right middle;
+        dock: bottom;
     }
     EditScreen #button-bar Button {
         margin-left: 1;
@@ -64,31 +69,32 @@ class EditScreen(ModalScreen[Script | None]):
         s = self._script
         title = "Edit Script" if s else "New Script"
         with Vertical(id="edit-container"):
-            yield Label(f"[bold]{title}[/bold]")
-            yield Label("Name:")
-            yield Input(value=s.name if s else "", id="name-input")
-            yield Label("Description:")
-            yield Input(value=s.description if s else "", id="desc-input")
-            yield Label("Type:")
-            yield Select(
-                SCRIPT_TYPES,
-                value=s.type if s else "bash",
-                allow_blank=False,
-                id="type-select",
-            )
-            yield Label("Timeout (seconds):")
-            yield Input(
-                value=str(s.timeout) if s else "60",
-                id="timeout-input",
-            )
-            yield Label("Script Content:")
-            lang = TEXTUAL_LANGUAGES.get(s.type, "python") if s else "bash"
-            yield TextArea(
-                s.content if s else "",
-                id="content-area",
-                language=lang,
-            )
-            yield ArgEditor(s.args if s else [])
+            with VerticalScroll(id="edit-scroll"):
+                yield Label(f"[bold]{title}[/bold]")
+                yield Label("Name:")
+                yield Input(value=s.name if s else "", id="name-input")
+                yield Label("Description:")
+                yield Input(value=s.description if s else "", id="desc-input")
+                yield Label("Type:")
+                yield Select(
+                    SCRIPT_TYPES,
+                    value=s.type if s else "bash",
+                    allow_blank=False,
+                    id="type-select",
+                )
+                yield Label("Timeout (seconds):")
+                yield Input(
+                    value=str(s.timeout) if s else "60",
+                    id="timeout-input",
+                )
+                yield Label("Script Content:")
+                lang = TEXTUAL_LANGUAGES.get(s.type, "python") if s else "bash"
+                yield TextArea(
+                    s.content if s else "",
+                    id="content-area",
+                    language=lang,
+                )
+                yield ArgEditor(s.args if s else [])
             with Horizontal(id="button-bar"):
                 yield Button("Cancel", id="cancel-btn")
                 yield Button("Save", id="save-btn", variant="primary")

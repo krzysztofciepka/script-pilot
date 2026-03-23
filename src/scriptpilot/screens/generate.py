@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 from textual.app import ComposeResult
-from textual.containers import Vertical, Horizontal
+from textual.containers import Vertical, VerticalScroll, Horizontal
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, TextArea
 from textual.worker import Worker, WorkerState
@@ -40,12 +40,17 @@ class GenerateScreen(ModalScreen[Script | None]):
         margin-bottom: 1;
     }
     GenerateScreen #result-area {
-        height: 1fr;
+        min-height: 8;
+        height: 12;
         margin-bottom: 1;
+    }
+    GenerateScreen #gen-scroll {
+        height: 1fr;
     }
     GenerateScreen #button-bar {
         height: 3;
         align: right middle;
+        dock: bottom;
     }
     GenerateScreen #button-bar Button {
         margin-left: 1;
@@ -64,23 +69,24 @@ class GenerateScreen(ModalScreen[Script | None]):
     def compose(self) -> ComposeResult:
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
         with Vertical(id="gen-container"):
-            yield Label("[bold]Generate Script with AI[/bold]")
-            if not api_key:
-                yield Label(
-                    "[red]Set OPENROUTER_API_KEY environment variable to use AI generation.[/red]",
-                    id="no-key-warning",
-                )
-            yield Label("What should this script do?")
-            yield TextArea(id="description-area", language=None)
-            yield Label("Language:")
-            yield Select(LANGUAGES, value="bash", allow_blank=False, id="lang-select")
-            yield Label("Generated Code:")
-            yield TextArea(id="result-area", language="bash", read_only=True)
-            with Vertical(id="save-fields"):
-                yield Label("Script Name:")
-                yield Input(id="save-name", placeholder="Name for this script")
-                yield Label("Description:")
-                yield Input(id="save-desc", placeholder="Brief description")
+            with VerticalScroll(id="gen-scroll"):
+                yield Label("[bold]Generate Script with AI[/bold]")
+                if not api_key:
+                    yield Label(
+                        "[red]Set OPENROUTER_API_KEY environment variable to use AI generation.[/red]",
+                        id="no-key-warning",
+                    )
+                yield Label("What should this script do?")
+                yield TextArea(id="description-area", language=None)
+                yield Label("Language:")
+                yield Select(LANGUAGES, value="bash", allow_blank=False, id="lang-select")
+                yield Label("Generated Code:")
+                yield TextArea(id="result-area", language="bash", read_only=True)
+                with Vertical(id="save-fields"):
+                    yield Label("Script Name:")
+                    yield Input(id="save-name", placeholder="Name for this script")
+                    yield Label("Description:")
+                    yield Input(id="save-desc", placeholder="Brief description")
             with Horizontal(id="button-bar"):
                 yield Button("Cancel", id="cancel-btn")
                 yield Button("Retry", id="retry-btn", disabled=True)

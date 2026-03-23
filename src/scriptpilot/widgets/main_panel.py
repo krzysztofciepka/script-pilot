@@ -35,7 +35,7 @@ class MainPanel(Widget):
 
     def compose(self) -> ComposeResult:
         yield Label(
-            "No scripts yet. Press [n] to create one or [g] to generate with AI.",
+            "No scripts yet. Press \\[n] to create one or \\[g] to generate with AI.",
             id="welcome",
         )
         yield Static(id="details")
