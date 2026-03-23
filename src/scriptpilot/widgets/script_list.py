@@ -11,7 +11,15 @@ TYPE_LABELS = {"bash": "SH", "python": "PY", "js": "JS"}
 
 
 class ScriptSelected(Message):
-    """Posted when a script is selected in the list."""
+    """Posted when a script is highlighted in the list (arrow navigation)."""
+
+    def __init__(self, script: Script):
+        super().__init__()
+        self.script = script
+
+
+class ScriptRunRequested(Message):
+    """Posted when a script is activated (Enter/click) in the list."""
 
     def __init__(self, script: Script):
         super().__init__()
@@ -51,9 +59,19 @@ class ScriptList(Widget):
             label = f"[{TYPE_LABELS.get(script.type, '??')}] {script.name}"
             lv.append(ListItem(Label(label), name=script.id))
 
-    def on_list_view_selected(self, event: ListView.Selected):
-        item_name = event.item.name
+    def _find_script(self, item_name: str) -> Script | None:
         for script in self._scripts:
             if script.id == item_name:
+                return script
+        return None
+
+    def on_list_view_highlighted(self, event: ListView.Highlighted):
+        if event.item is not None:
+            script = self._find_script(event.item.name)
+            if script:
                 self.post_message(ScriptSelected(script))
-                break
+
+    def on_list_view_selected(self, event: ListView.Selected):
+        script = self._find_script(event.item.name)
+        if script:
+            self.post_message(ScriptRunRequested(script))
