@@ -73,7 +73,7 @@ class GenerateScreen(ModalScreen[Script | None]):
             yield Label("What should this script do?")
             yield TextArea(id="description-area", language=None)
             yield Label("Language:")
-            yield Select(LANGUAGES, value="bash", id="lang-select")
+            yield Select(LANGUAGES, value="bash", allow_blank=False, id="lang-select")
             yield Label("Generated Code:")
             yield TextArea(id="result-area", language="bash", read_only=True)
             with Vertical(id="save-fields"):

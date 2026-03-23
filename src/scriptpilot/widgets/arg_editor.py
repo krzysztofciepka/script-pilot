@@ -74,7 +74,10 @@ class ArgRow(Widget):
             if arg_type == "boolean":
                 default = default_str.lower() in ("true", "1", "yes")
             elif arg_type == "integer":
-                default = int(default_str) if default_str.isdigit() else None
+                try:
+                    default = int(default_str)
+                except ValueError:
+                    default = None
             else:
                 default = default_str
 

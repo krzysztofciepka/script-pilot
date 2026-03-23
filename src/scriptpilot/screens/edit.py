@@ -73,6 +73,7 @@ class EditScreen(ModalScreen[Script | None]):
             yield Select(
                 SCRIPT_TYPES,
                 value=s.type if s else "bash",
+                allow_blank=False,
                 id="type-select",
             )
             yield Label("Timeout (seconds):")
