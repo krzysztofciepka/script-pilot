@@ -5,13 +5,14 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Footer, Header, Label
 
-from scriptpilot.models import Script
+from scriptpilot.models import Script, ScriptArg
 from scriptpilot.storage import ScriptStore
 from scriptpilot.executor import execute_script, InterpreterNotFoundError
 from scriptpilot.widgets.script_list import ScriptList, ScriptSelected
 from scriptpilot.widgets.main_panel import MainPanel
 from scriptpilot.screens.edit import EditScreen
 from scriptpilot.screens.run import RunScreen
+from scriptpilot.screens.prompt import PromptScreen
 
 
 class MainScreen(Screen):
@@ -22,6 +23,9 @@ class MainScreen(Screen):
         ("e", "edit_script", "Edit"),
         ("d", "delete_script", "Delete"),
         ("r", "run_script", "Run"),
+        ("p", "prompt_script", "Prompt"),
+        ("c", "clone_script", "Clone"),
+        ("f", "toggle_favorite", "Fav"),
     ]
 
     DEFAULT_CSS = """
@@ -104,6 +108,67 @@ class MainScreen(Screen):
             self.app.push_screen(RunScreen(script), callback=on_args)
         else:
             self._execute(script)
+
+    def action_prompt_script(self):
+        if not self._selected_script:
+            self.notify("No script selected", severity="warning")
+            return
+
+        script = self._selected_script
+
+        def on_result(updated: Script | None):
+            if updated:
+                self._store.update(updated)
+                self._selected_script = updated
+                self._refresh_list()
+                self.query_one(MainPanel).show_script_details(updated)
+
+        self.app.push_screen(
+            PromptScreen(script, default_model=self.app._config.default_model),
+            callback=on_result,
+        )
+
+    def action_clone_script(self):
+        if not self._selected_script:
+            self.notify("No script selected", severity="warning")
+            return
+
+        original = self._selected_script
+        clone = Script(
+            name=f"{original.name} (copy)",
+            description=original.description,
+            type=original.type,
+            content=original.content,
+            args=[ScriptArg(**a.model_dump()) for a in original.args],
+            timeout=original.timeout,
+            favorite=False,
+        )
+        self._store.add(clone)
+        self._refresh_list()
+        self.notify(f"Cloned '{original.name}'")
+
+    def action_toggle_favorite(self):
+        if not self._selected_script:
+            self.notify("No script selected", severity="warning")
+            return
+
+        script = self._selected_script
+        updated = Script(
+            id=script.id,
+            name=script.name,
+            description=script.description,
+            type=script.type,
+            content=script.content,
+            args=script.args,
+            timeout=script.timeout,
+            favorite=not script.favorite,
+        )
+        self._store.update(updated)
+        self._selected_script = updated
+        self._refresh_list()
+        self.query_one(MainPanel).show_script_details(updated)
+        label = "Favorited" if updated.favorite else "Unfavorited"
+        self.notify(f"{label} '{updated.name}'")
 
     def _execute(self, script: Script, arg_values: list[str] | None = None):
         panel = self.query_one(MainPanel)
