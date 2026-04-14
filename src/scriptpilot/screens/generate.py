@@ -12,6 +12,7 @@ from scriptpilot.models import Script
 from scriptpilot.openrouter import (
     OpenRouterClient,
     AuthenticationError,
+    GenerationResult,
     RateLimitError,
 )
 
@@ -65,6 +66,7 @@ class GenerateScreen(ModalScreen[Script | None]):
         super().__init__()
         self._model = default_model
         self._generated = False
+        self._result: GenerationResult | None = None
 
     def compose(self) -> ComposeResult:
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -139,10 +141,10 @@ class GenerateScreen(ModalScreen[Script | None]):
         if event.worker.name != "generate":
             return
         if event.state == WorkerState.SUCCESS:
-            result = event.worker.result
+            self._result = event.worker.result
             result_area = self.query_one("#result-area", TextArea)
             result_area.read_only = False
-            result_area.load_text(result)
+            result_area.load_text(self._result.code)
             self.query_one("#save-fields").display = True
             self.query_one("#save-btn", Button).disabled = False
             self.query_one("#retry-btn", Button).disabled = False
@@ -173,5 +175,6 @@ class GenerateScreen(ModalScreen[Script | None]):
             description=desc,
             type=language,
             content=content,
+            args=self._result.args if self._result else [],
         )
         self.dismiss(script)
