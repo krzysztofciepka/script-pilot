@@ -1,0 +1,43 @@
+name: Build Binary
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Build binary
+        run: |
+          uv run pyinstaller \
+            --onefile \
+            --name scriptpilot \
+            --hidden-import textual \
+            --hidden-import textual.widgets \
+            --hidden-import textual.screen \
+            --hidden-import textual.css \
+            --hidden-import httpx \
+            --hidden-import pydantic \
+            --collect-data textual \
+            src/scriptpilot/__main__.py
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/scriptpilot
