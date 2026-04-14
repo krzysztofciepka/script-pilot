@@ -5,8 +5,9 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Footer, Header, Label
 
-from scriptpilot.models import Script, ScriptArg
+from scriptpilot.models import Script, ScriptArg, RunRecord
 from scriptpilot.storage import ScriptStore
+from scriptpilot.history import HistoryStore
 from scriptpilot.executor import execute_script, InterpreterNotFoundError
 from scriptpilot.widgets.script_list import ScriptList, ScriptSelected
 from scriptpilot.widgets.main_panel import MainPanel
@@ -34,9 +35,10 @@ class MainScreen(Screen):
     }
     """
 
-    def __init__(self, store: ScriptStore):
+    def __init__(self, store: ScriptStore, history: HistoryStore):
         super().__init__()
         self._store = store
+        self._history = history
         self._selected_script: Script | None = None
 
     def compose(self) -> ComposeResult:
@@ -46,9 +48,14 @@ class MainScreen(Screen):
             yield MainPanel()
         yield Footer()
 
+    def _get_last_run(self, script_id: str):
+        runs = self._history.list_for_script(script_id)
+        return runs[0] if runs else None
+
     def on_script_selected(self, event: ScriptSelected):
         self._selected_script = event.script
-        self.query_one(MainPanel).show_script_details(event.script)
+        last_run = self._get_last_run(event.script.id)
+        self.query_one(MainPanel).show_script_details(event.script, last_run)
 
     def action_new_script(self):
         def on_result(script: Script | None):
@@ -68,7 +75,8 @@ class MainScreen(Screen):
                 self._store.update(script)
                 self._selected_script = script
                 self._refresh_list()
-                self.query_one(MainPanel).show_script_details(script)
+                last_run = self._get_last_run(script.id)
+                self.query_one(MainPanel).show_script_details(script, last_run)
 
         self.app.push_screen(
             EditScreen(self._selected_script), callback=on_result
@@ -121,7 +129,8 @@ class MainScreen(Screen):
                 self._store.update(updated)
                 self._selected_script = updated
                 self._refresh_list()
-                self.query_one(MainPanel).show_script_details(updated)
+                last_run = self._get_last_run(updated.id)
+                self.query_one(MainPanel).show_script_details(updated, last_run)
 
         self.app.push_screen(
             PromptScreen(script, default_model=self.app._config.default_model),
@@ -166,7 +175,8 @@ class MainScreen(Screen):
         self._store.update(updated)
         self._selected_script = updated
         self._refresh_list()
-        self.query_one(MainPanel).show_script_details(updated)
+        last_run = self._get_last_run(updated.id)
+        self.query_one(MainPanel).show_script_details(updated, last_run)
         label = "Favorited" if updated.favorite else "Unfavorited"
         self.notify(f"{label} '{updated.name}'")
 
@@ -175,13 +185,31 @@ class MainScreen(Screen):
         panel.show_running(script)
 
         async def run():
+            output_lines: list[str] = []
+
+            def collect_output(line: str):
+                output_lines.append(line)
+                panel.append_output(line)
+
             try:
                 result = await execute_script(
                     script,
                     arg_values=arg_values,
-                    on_output=panel.append_output,
+                    on_output=collect_output,
                 )
                 panel.show_finished(result.exit_code, result.duration, result.timed_out)
+
+                from datetime import datetime, timezone
+                record = RunRecord(
+                    script_id=script.id,
+                    script_name=script.name,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    exit_code=result.exit_code,
+                    timed_out=result.timed_out,
+                    duration=result.duration,
+                    output="\n".join(output_lines),
+                )
+                self._history.add(record)
             except InterpreterNotFoundError as e:
                 panel.show_error(str(e))
                 self.notify(str(e), severity="error")

@@ -7,6 +7,7 @@ from textual.app import App
 
 from scriptpilot.models import AppConfig
 from scriptpilot.storage import ScriptStore
+from scriptpilot.history import HistoryStore
 from scriptpilot.screens.main import MainScreen
 from scriptpilot.screens.settings import SettingsScreen
 from scriptpilot.screens.generate import GenerateScreen
@@ -30,10 +31,11 @@ class ScriptPilotApp(App):
     def __init__(self):
         super().__init__()
         self._store = ScriptStore()
+        self._history = HistoryStore()
         self._config = self._load_config()
 
     def on_mount(self):
-        self.push_screen(MainScreen(self._store))
+        self.push_screen(MainScreen(self._store, self._history))
 
     def _load_config(self) -> AppConfig:
         if CONFIG_PATH.exists():

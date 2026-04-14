@@ -4,7 +4,7 @@ from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Label, RichLog, Static
 
-from scriptpilot.models import Script
+from scriptpilot.models import Script, RunRecord
 
 
 class MainPanel(Widget):
@@ -51,7 +51,7 @@ class MainPanel(Widget):
         self.query_one("#output-log").display = False
         self.query_one("#status-bar").display = False
 
-    def show_script_details(self, script: Script):
+    def show_script_details(self, script: Script, last_run: RunRecord | None = None):
         """Display script metadata."""
         self.query_one("#welcome").display = False
         self.query_one("#output-log").display = False
@@ -59,11 +59,18 @@ class MainPanel(Widget):
 
         details = self.query_one("#details", Static)
         args_text = ", ".join(a.name for a in script.args) if script.args else "none"
-        details.update(
+        text = (
             f"[bold]{script.name}[/bold]\n"
             f"{script.description}\n\n"
             f"Type: {script.type}  |  Timeout: {script.timeout}s  |  Args: {args_text}"
         )
+        if last_run:
+            text += (
+                f"\n\n[dim]Last run: {last_run.timestamp}  |  "
+                f"Exit: {last_run.exit_code}  |  "
+                f"Duration: {last_run.duration:.1f}s[/dim]"
+            )
+        details.update(text)
         details.display = True
 
     def show_running(self, script: Script):
