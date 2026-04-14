@@ -38,19 +38,33 @@ class ScriptList(Widget):
         self._scripts: list[Script] = scripts or []
 
     def compose(self) -> ComposeResult:
+        sorted_scripts = self._sorted(self._scripts)
         with ListView():
-            for script in self._scripts:
-                label = f"[{TYPE_LABELS.get(script.type, '??')}] {script.name}"
+            for script in sorted_scripts:
+                label = self._make_label(script)
                 yield ListItem(Label(label), name=script.id)
 
     def update_scripts(self, scripts: list[Script]):
         """Refresh the list with new script data."""
         self._scripts = scripts
+        sorted_scripts = self._sorted(scripts)
         lv = self.query_one(ListView)
         lv.clear()
-        for script in scripts:
-            label = f"[{TYPE_LABELS.get(script.type, '??')}] {script.name}"
+        for script in sorted_scripts:
+            label = self._make_label(script)
             lv.append(ListItem(Label(label), name=script.id))
+
+    @staticmethod
+    def _sorted(scripts: list[Script]) -> list[Script]:
+        """Sort favorites first, preserve insertion order within groups."""
+        favorites = [s for s in scripts if s.favorite]
+        others = [s for s in scripts if not s.favorite]
+        return favorites + others
+
+    @staticmethod
+    def _make_label(script: Script) -> str:
+        star = " *" if script.favorite else ""
+        return f"[{TYPE_LABELS.get(script.type, '??')}]{star} {script.name}"
 
     def _find_script(self, item_name: str) -> Script | None:
         for script in self._scripts:
