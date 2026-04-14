@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json as _json
 import re
+from dataclasses import dataclass
 
 import httpx
+
+from scriptpilot.models import ScriptArg
 
 BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -24,6 +28,50 @@ class RateLimitError(Exception):
 
 class OpenRouterConnectionError(Exception):
     """Raised when unable to reach OpenRouter."""
+
+
+class MalformedResponseError(Exception):
+    """Raised when the LLM response does not match the expected format."""
+
+
+@dataclass
+class GenerationResult:
+    """Parsed LLM response containing code and argument definitions."""
+    code: str
+    args: list[ScriptArg]
+
+
+def parse_generation_response(text: str) -> GenerationResult:
+    """Parse an LLM response into code and argument definitions."""
+    blocks = re.findall(r"```(\w*)\n(.*?)```", text, re.DOTALL)
+    if not blocks:
+        raise MalformedResponseError("No fenced code blocks found")
+
+    code = None
+    args_data = None
+
+    for lang, content in blocks:
+        if lang == "json":
+            try:
+                parsed = _json.loads(content.strip())
+                if isinstance(parsed, dict) and "args" in parsed:
+                    args_data = parsed["args"]
+            except _json.JSONDecodeError:
+                raise MalformedResponseError("Invalid JSON in args block")
+        elif code is None:
+            code = content.strip()
+
+    if code is None:
+        raise MalformedResponseError("No code block found")
+    if args_data is None:
+        raise MalformedResponseError("No JSON block with 'args' key found")
+
+    try:
+        args = [ScriptArg(**a) for a in args_data]
+    except Exception as e:
+        raise MalformedResponseError(f"Invalid arg definition: {e}") from e
+
+    return GenerationResult(code=code, args=args)
 
 
 def strip_markdown_fences(text: str) -> str:

@@ -9,6 +9,12 @@ from scriptpilot.openrouter import (
     RateLimitError,
     strip_markdown_fences,
 )
+from scriptpilot.openrouter import (
+    GenerationResult,
+    MalformedResponseError,
+    parse_generation_response,
+)
+from scriptpilot.models import ScriptArg
 
 
 class TestStripMarkdownFences:
@@ -125,3 +131,81 @@ class TestOpenRouterClient:
         )
         with pytest.raises(OpenRouterConnectionError):
             await client.generate_script("x", "bash", "openai/gpt-4o")
+
+
+class TestParseGenerationResponse:
+    def test_parse_valid_response(self):
+        text = (
+            '```bash\necho "hello $1"\n```\n\n'
+            '```json\n{"args": [{"name": "greeting", "type": "string", "required": true, "default": ""}]}\n```'
+        )
+        result = parse_generation_response(text)
+        assert isinstance(result, GenerationResult)
+        assert 'echo "hello $1"' in result.code
+        assert len(result.args) == 1
+        assert result.args[0].name == "greeting"
+        assert result.args[0].type == "string"
+
+    def test_parse_python_code_block(self):
+        text = (
+            '```python\nprint("hi")\n```\n\n'
+            '```json\n{"args": []}\n```'
+        )
+        result = parse_generation_response(text)
+        assert 'print("hi")' in result.code
+        assert result.args == []
+
+    def test_parse_javascript_code_block(self):
+        text = (
+            '```javascript\nconsole.log("hi")\n```\n\n'
+            '```json\n{"args": []}\n```'
+        )
+        result = parse_generation_response(text)
+        assert 'console.log("hi")' in result.code
+
+    def test_parse_empty_args(self):
+        text = '```bash\necho hi\n```\n\n```json\n{"args": []}\n```'
+        result = parse_generation_response(text)
+        assert result.args == []
+
+    def test_parse_multiple_args(self):
+        text = (
+            '```bash\necho "$1 $2"\n```\n\n'
+            '```json\n{"args": ['
+            '{"name": "input", "type": "string", "required": true, "default": ""},'
+            '{"name": "verbose", "type": "boolean", "required": false, "default": false}'
+            ']}\n```'
+        )
+        result = parse_generation_response(text)
+        assert len(result.args) == 2
+        assert result.args[0].name == "input"
+        assert result.args[1].name == "verbose"
+        assert result.args[1].type == "boolean"
+
+    def test_malformed_no_code_block(self):
+        text = 'echo "hello"\n\n```json\n{"args": []}\n```'
+        with pytest.raises(MalformedResponseError):
+            parse_generation_response(text)
+
+    def test_malformed_no_json_block(self):
+        text = '```bash\necho hi\n```\n\nno json here'
+        with pytest.raises(MalformedResponseError):
+            parse_generation_response(text)
+
+    def test_malformed_invalid_json(self):
+        text = '```bash\necho hi\n```\n\n```json\n{invalid json}\n```'
+        with pytest.raises(MalformedResponseError):
+            parse_generation_response(text)
+
+    def test_malformed_missing_args_key(self):
+        text = '```bash\necho hi\n```\n\n```json\n{"params": []}\n```'
+        with pytest.raises(MalformedResponseError):
+            parse_generation_response(text)
+
+    def test_malformed_invalid_arg_type(self):
+        text = (
+            '```bash\necho hi\n```\n\n'
+            '```json\n{"args": [{"name": "x", "type": "float", "required": true, "default": null}]}\n```'
+        )
+        with pytest.raises(MalformedResponseError):
+            parse_generation_response(text)
