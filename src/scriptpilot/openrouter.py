@@ -10,11 +10,15 @@ from scriptpilot.models import ScriptArg
 
 BASE_URL = "https://openrouter.ai/api/v1"
 
-SYSTEM_PROMPT = (
-    "You are a script generator. Output ONLY valid, executable code. "
-    "Include brief comments where helpful. "
-    "Do NOT include markdown fences, explanations, or any text outside the script. "
-    "The script must be complete and ready to run."
+GENERATE_SYSTEM_PROMPT = (
+    "You are a script generator. You MUST output exactly two fenced blocks:\n\n"
+    "1. A code block with the script (use ```bash, ```python, or ```javascript as the fence label)\n"
+    "2. A JSON block with argument definitions\n\n"
+    "The code must be complete, valid, and ready to run. Include brief comments where helpful.\n\n"
+    "The JSON block must have this exact format:\n"
+    '```json\n{"args": [{"name": "arg_name", "type": "string|integer|boolean", "required": true|false, "default": "value"}]}\n```\n\n'
+    "Use an empty args array if the script takes no arguments.\n"
+    "Do NOT include any text outside these two blocks."
 )
 
 
@@ -91,8 +95,36 @@ class OpenRouterClient:
 
     async def generate_script(
         self, description: str, language: str, model: str
-    ) -> str:
+    ) -> GenerationResult:
         """Generate a script from a natural language description."""
+        messages = [
+            {"role": "system", "content": GENERATE_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Write a {language} script that does the following:\n\n"
+                    f"{description}"
+                ),
+            },
+        ]
+        return await self._call_with_retry(messages, model)
+
+    async def _call_with_retry(
+        self, messages: list[dict], model: str, max_retries: int = 3
+    ) -> GenerationResult:
+        """Call the API and parse response, retrying on malformed output."""
+        last_error = None
+        for _ in range(max_retries):
+            content = await self._chat(messages, model)
+            try:
+                return parse_generation_response(content)
+            except MalformedResponseError as e:
+                last_error = e
+                continue
+        raise last_error
+
+    async def _chat(self, messages: list[dict], model: str) -> str:
+        """Make a chat completion request and return the content string."""
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -101,19 +133,7 @@ class OpenRouterClient:
                         "Authorization": f"Bearer {self._api_key}",
                         "Content-Type": "application/json",
                     },
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": SYSTEM_PROMPT},
-                            {
-                                "role": "user",
-                                "content": (
-                                    f"Write a {language} script that does the following:\n\n"
-                                    f"{description}"
-                                ),
-                            },
-                        ],
-                    },
+                    json={"model": model, "messages": messages},
                     timeout=60,
                 )
         except (httpx.ConnectError, httpx.TimeoutException) as e:
@@ -127,8 +147,7 @@ class OpenRouterClient:
             raise OpenRouterConnectionError("OpenRouter server error")
         response.raise_for_status()
 
-        content = response.json()["choices"][0]["message"]["content"]
-        return strip_markdown_fences(content)
+        return response.json()["choices"][0]["message"]["content"]
 
     async def list_models(self) -> list[dict]:
         """Fetch available models from OpenRouter."""

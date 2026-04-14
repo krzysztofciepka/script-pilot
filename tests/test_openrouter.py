@@ -42,13 +42,13 @@ class TestOpenRouterClient:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_generate_script(self, client):
+    async def test_generate_script_returns_generation_result(self, client):
         respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
             return_value=httpx.Response(
                 200,
                 json={
                     "choices": [
-                        {"message": {"content": 'echo "generated"'}}
+                        {"message": {"content": '```bash\necho "generated"\n```\n\n```json\n{"args": []}\n```'}}
                     ]
                 },
             )
@@ -58,25 +58,57 @@ class TestOpenRouterClient:
             language="bash",
             model="openai/gpt-4o",
         )
-        assert result == 'echo "generated"'
+        assert isinstance(result, GenerationResult)
+        assert result.code == 'echo "generated"'
+        assert result.args == []
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_generate_strips_fences(self, client):
+    async def test_generate_script_with_args(self, client):
         respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
             return_value=httpx.Response(
                 200,
                 json={
                     "choices": [
-                        {"message": {"content": '```bash\necho hi\n```'}}
+                        {"message": {"content": (
+                            '```bash\necho "$1"\n```\n\n'
+                            '```json\n{"args": [{"name": "msg", "type": "string", "required": true, "default": ""}]}\n```'
+                        )}}
                     ]
                 },
             )
         )
         result = await client.generate_script(
-            description="echo", language="bash", model="openai/gpt-4o"
+            description="echo a message",
+            language="bash",
+            model="openai/gpt-4o",
         )
-        assert result == "echo hi"
+        assert len(result.args) == 1
+        assert result.args[0].name == "msg"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_generate_retries_on_malformed(self, client):
+        route = respx.post("https://openrouter.ai/api/v1/chat/completions")
+        route.side_effect = [
+            httpx.Response(200, json={"choices": [{"message": {"content": "no fences here"}}]}),
+            httpx.Response(200, json={"choices": [{"message": {"content": '```bash\necho ok\n```\n\n```json\n{"args": []}\n```'}}]}),
+        ]
+        result = await client.generate_script("test", "bash", "openai/gpt-4o")
+        assert result.code == "echo ok"
+        assert route.call_count == 2
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_generate_raises_after_3_retries(self, client):
+        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "bad response"}}]},
+            )
+        )
+        with pytest.raises(MalformedResponseError):
+            await client.generate_script("test", "bash", "openai/gpt-4o")
 
     @respx.mock
     @pytest.mark.asyncio
