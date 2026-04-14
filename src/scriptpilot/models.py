@@ -25,10 +25,23 @@ class Script(BaseModel):
     content: str
     args: list[ScriptArg] = []
     timeout: int = 60
+    favorite: bool = False
 
     def model_post_init(self, __context):
         if not self.id:
             self.id = str(uuid.uuid4())
+
+
+class RunRecord(BaseModel):
+    """A single script execution record."""
+
+    script_id: str
+    script_name: str
+    timestamp: str
+    exit_code: int
+    timed_out: bool
+    duration: float
+    output: str
 
 
 class AppConfig(BaseModel):
