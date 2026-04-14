@@ -241,3 +241,80 @@ class TestParseGenerationResponse:
         )
         with pytest.raises(MalformedResponseError):
             parse_generation_response(text)
+
+
+class TestModifyScript:
+    @pytest.fixture
+    def client(self):
+        return OpenRouterClient(api_key="test-key")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_modify_script_returns_generation_result(self, client):
+        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"content": (
+                            '```bash\necho "modified"\n```\n\n'
+                            '```json\n{"args": []}\n```'
+                        )}}
+                    ]
+                },
+            )
+        )
+        result = await client.modify_script(
+            current_code='echo "original"',
+            instruction="change to say modified",
+            language="bash",
+            model="openai/gpt-4o",
+        )
+        assert isinstance(result, GenerationResult)
+        assert result.code == 'echo "modified"'
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_modify_script_retries_on_malformed(self, client):
+        route = respx.post("https://openrouter.ai/api/v1/chat/completions")
+        route.side_effect = [
+            httpx.Response(200, json={"choices": [{"message": {"content": "plain text"}}]}),
+            httpx.Response(200, json={"choices": [{"message": {"content": '```bash\necho ok\n```\n\n```json\n{"args": []}\n```'}}]}),
+        ]
+        result = await client.modify_script('echo "old"', "fix it", "bash", "openai/gpt-4o")
+        assert result.code == "echo ok"
+        assert route.call_count == 2
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_modify_script_preserves_args(self, client):
+        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"content": (
+                            '```python\nimport sys\nprint(sys.argv[1])\n```\n\n'
+                            '```json\n{"args": [{"name": "input_file", "type": "string", "required": true, "default": ""}]}\n```'
+                        )}}
+                    ]
+                },
+            )
+        )
+        result = await client.modify_script(
+            current_code='print("hello")',
+            instruction="read from a file argument",
+            language="python",
+            model="openai/gpt-4o",
+        )
+        assert len(result.args) == 1
+        assert result.args[0].name == "input_file"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_modify_auth_error(self, client):
+        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+            return_value=httpx.Response(401, json={"error": "invalid key"})
+        )
+        with pytest.raises(AuthenticationError):
+            await client.modify_script("x", "y", "bash", "openai/gpt-4o")

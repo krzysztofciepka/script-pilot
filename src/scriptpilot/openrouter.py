@@ -22,6 +22,19 @@ GENERATE_SYSTEM_PROMPT = (
 )
 
 
+MODIFY_SYSTEM_PROMPT = (
+    "You are a script modifier. You will receive an existing script and an instruction "
+    "describing what to change. Output the COMPLETE updated script (not a diff). "
+    "You MUST output exactly two fenced blocks:\n\n"
+    "1. A code block with the full updated script (use ```bash, ```python, or ```javascript)\n"
+    "2. A JSON block with argument definitions for the updated script\n\n"
+    "The JSON block must have this exact format:\n"
+    '```json\n{"args": [{"name": "arg_name", "type": "string|integer|boolean", "required": true|false, "default": "value"}]}\n```\n\n'
+    "Use an empty args array if the script takes no arguments.\n"
+    "Do NOT include any text outside these two blocks."
+)
+
+
 class AuthenticationError(Exception):
     """Raised when the API key is invalid."""
 
@@ -104,6 +117,27 @@ class OpenRouterClient:
                 "content": (
                     f"Write a {language} script that does the following:\n\n"
                     f"{description}"
+                ),
+            },
+        ]
+        return await self._call_with_retry(messages, model)
+
+    async def modify_script(
+        self,
+        current_code: str,
+        instruction: str,
+        language: str,
+        model: str,
+    ) -> GenerationResult:
+        """Modify an existing script based on a natural language instruction."""
+        messages = [
+            {"role": "system", "content": MODIFY_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Here is the current {language} script:\n\n"
+                    f"```{language}\n{current_code}\n```\n\n"
+                    f"Modification instruction: {instruction}"
                 ),
             },
         ]
