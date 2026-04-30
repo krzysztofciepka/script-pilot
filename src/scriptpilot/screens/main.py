@@ -8,7 +8,7 @@ from textual.widgets import Button, Footer, Header, Label
 from scriptpilot.models import Script, ScriptArg, RunRecord
 from scriptpilot.storage import ScriptStore
 from scriptpilot.history import HistoryStore
-from scriptpilot.executor import execute_script, InterpreterNotFoundError
+from scriptpilot.executor import execute_script, InterpreterNotFoundError, ScriptCwdError
 from scriptpilot.widgets.script_list import ScriptList, ScriptSelected
 from scriptpilot.widgets.main_panel import MainPanel
 from scriptpilot.screens.edit import EditScreen
@@ -151,6 +151,8 @@ class MainScreen(Screen):
             args=[ScriptArg(**a.model_dump()) for a in original.args],
             timeout=original.timeout,
             favorite=False,
+            cwd=original.cwd,
+            env=dict(original.env),
         )
         self._store.add(clone)
         self._refresh_list()
@@ -171,6 +173,8 @@ class MainScreen(Screen):
             args=script.args,
             timeout=script.timeout,
             favorite=not script.favorite,
+            cwd=script.cwd,
+            env=script.env,
         )
         self._store.update(updated)
         self._selected_script = updated
@@ -197,6 +201,7 @@ class MainScreen(Screen):
                     arg_values=arg_values,
                     on_output=collect_output,
                     script_path=self._store.path_for(script.id),
+                    python_command=self.app._config.python_command,
                 )
                 panel.show_finished(result.exit_code, result.duration, result.timed_out)
 
@@ -211,7 +216,7 @@ class MainScreen(Screen):
                     output="\n".join(output_lines),
                 )
                 self._history.add(record)
-            except InterpreterNotFoundError as e:
+            except (InterpreterNotFoundError, ScriptCwdError) as e:
                 panel.show_error(str(e))
                 self.notify(str(e), severity="error")
             except Exception as e:
