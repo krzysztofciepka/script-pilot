@@ -56,12 +56,17 @@ class ScriptStore:
         self._dir.mkdir(parents=True, exist_ok=True)
         for meta_path in sorted(self._dir.glob("*.meta.json")):
             stem = meta_path.name[: -len(".meta.json")]
-            meta = json.loads(meta_path.read_text())
-            ext = EXTENSIONS[meta["type"]]
-            body_path = self._dir / f"{stem}{ext}"
-            content = body_path.read_text()
-            meta["id"] = stem
-            script = Script(**meta, content=content)
+            try:
+                meta = json.loads(meta_path.read_text())
+                ext = EXTENSIONS[meta["type"]]
+                body_path = self._dir / f"{stem}{ext}"
+                if not body_path.exists():
+                    continue  # orphan meta → skip
+                content = body_path.read_text()
+                meta["id"] = stem
+                script = Script(**meta, content=content)
+            except Exception:
+                continue  # corrupt meta, missing/invalid type, model error → skip
             self._scripts[script.id] = script
 
     def _write(self, script: Script):

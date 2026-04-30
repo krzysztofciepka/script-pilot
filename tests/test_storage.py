@@ -130,6 +130,37 @@ class TestScriptStore:
         with pytest.raises(KeyError):
             store.path_for("does-not-exist")
 
+    def test_orphan_meta_skipped(self, tmp_path, sample_script):
+        # Create a meta file with no matching body.
+        store = ScriptStore(tmp_path / "scripts")
+        store.add(sample_script)
+        body = store._dir / f"{sample_script.id}.sh"
+        body.unlink()  # leave only the meta
+
+        # New instance must not raise and must skip the orphan.
+        store2 = ScriptStore(tmp_path / "scripts")
+        assert store2.list() == []
+
+    def test_orphan_body_skipped(self, tmp_path):
+        # Body file with no meta sibling — never even considered.
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir()
+        (scripts_dir / "stray.sh").write_text("echo stray")
+
+        store = ScriptStore(scripts_dir)
+        assert store.list() == []
+
+    def test_corrupt_meta_skipped(self, tmp_path, sample_script):
+        # One good script + one broken meta. Good one must still load.
+        store = ScriptStore(tmp_path / "scripts")
+        store.add(sample_script)
+        (store._dir / "broken.meta.json").write_text("{not valid json")
+
+        store2 = ScriptStore(tmp_path / "scripts")
+        loaded = store2.list()
+        assert len(loaded) == 1
+        assert loaded[0].id == sample_script.id
+
     def test_meta_with_args_round_trips(self, tmp_path):
         store = ScriptStore(tmp_path / "scripts")
         script = Script(
