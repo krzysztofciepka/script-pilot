@@ -5,9 +5,10 @@ import os
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Select
+from textual.widgets import Button, Input, Label
 
 from scriptpilot.models import AppConfig
+from scriptpilot.secrets import SECRETS_PATH, load_secrets
 
 
 class SettingsScreen(ModalScreen[AppConfig | None]):
@@ -46,6 +47,12 @@ class SettingsScreen(ModalScreen[AppConfig | None]):
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
         key_status = "[green]Set[/green]" if api_key else "[red]Not set[/red]"
 
+        if SECRETS_PATH.exists():
+            n = len(load_secrets())
+            secrets_status = f"[green]{n} keys loaded[/green]"
+        else:
+            secrets_status = "[dim]not present[/dim]"
+
         with Vertical(id="settings-container"):
             yield Label("[bold]Settings[/bold]")
             yield Label("")
@@ -57,6 +64,16 @@ class SettingsScreen(ModalScreen[AppConfig | None]):
                 value=self._config.default_model,
                 id="model-input",
             )
+            yield Label("Python command:")
+            yield Input(
+                value=self._config.python_command,
+                placeholder="uv run --script",
+                id="python-cmd-input",
+            )
+            yield Label(f"Secrets file: {SECRETS_PATH} [{secrets_status}]")
+            yield Label(
+                "[dim]One KEY=VALUE per line. Edit with your editor.[/dim]"
+            )
             with Horizontal(id="button-bar"):
                 yield Button("Cancel", id="cancel-btn")
                 yield Button("Save", id="save-btn", variant="primary")
@@ -66,5 +83,11 @@ class SettingsScreen(ModalScreen[AppConfig | None]):
             self.dismiss(None)
         elif event.button.id == "save-btn":
             model = self.query_one("#model-input", Input).value.strip()
-            config = AppConfig(default_model=model or "openai/gpt-4o")
+            python_cmd = self.query_one("#python-cmd-input", Input).value.strip()
+            if not python_cmd:
+                python_cmd = "uv run --script"
+            config = AppConfig(
+                default_model=model or "openai/gpt-4o",
+                python_command=python_cmd,
+            )
             self.dismiss(config)
