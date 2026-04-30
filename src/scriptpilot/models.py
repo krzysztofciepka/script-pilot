@@ -26,6 +26,8 @@ class Script(BaseModel):
     args: list[ScriptArg] = []
     timeout: int = 60
     favorite: bool = False
+    cwd: str | None = None
+    env: dict[str, str] = {}
 
     def model_post_init(self, __context):
         if not self.id:
@@ -48,3 +50,4 @@ class AppConfig(BaseModel):
     """Application configuration."""
 
     default_model: str = "openai/gpt-4o"
+    python_command: str = "uv run --script"

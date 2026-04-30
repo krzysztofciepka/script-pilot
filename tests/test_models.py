@@ -113,6 +113,61 @@ class TestScriptFavorite:
         assert s.favorite is False
 
 
+class TestScriptCwdEnv:
+    def test_cwd_default_none(self):
+        s = Script(name="x", description="x", type="bash", content="x")
+        assert s.cwd is None
+
+    def test_cwd_set(self):
+        s = Script(name="x", description="x", type="bash", content="x", cwd="~/work")
+        assert s.cwd == "~/work"
+
+    def test_env_default_empty(self):
+        s = Script(name="x", description="x", type="bash", content="x")
+        assert s.env == {}
+
+    def test_env_set(self):
+        s = Script(
+            name="x", description="x", type="bash", content="x",
+            env={"FOO": "bar", "BAZ": "qux"},
+        )
+        assert s.env == {"FOO": "bar", "BAZ": "qux"}
+
+    def test_roundtrip_with_cwd_and_env(self):
+        s = Script(
+            name="x", description="x", type="bash", content="x",
+            cwd="/tmp", env={"K": "V"},
+        )
+        data = s.model_dump()
+        s2 = Script(**data)
+        assert s2.cwd == "/tmp"
+        assert s2.env == {"K": "V"}
+
+    def test_backward_compat_no_cwd_no_env(self):
+        """Existing meta files without cwd/env load with defaults."""
+        data = {
+            "name": "x", "description": "x", "type": "bash",
+            "content": "x", "id": "abc",
+        }
+        s = Script(**data)
+        assert s.cwd is None
+        assert s.env == {}
+
+
+class TestAppConfigPythonCommand:
+    def test_python_command_default(self):
+        config = AppConfig()
+        assert config.python_command == "uv run --script"
+
+    def test_python_command_custom(self):
+        config = AppConfig(python_command="python3")
+        assert config.python_command == "python3"
+
+    def test_backward_compat_no_python_command(self):
+        config = AppConfig(**{"default_model": "openai/gpt-4o"})
+        assert config.python_command == "uv run --script"
+
+
 from scriptpilot.models import RunRecord
 
 
