@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import os
-import signal
+import shlex
 import shutil
+import signal
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,8 +14,8 @@ from scriptpilot.models import Script
 
 INTERPRETERS = {
     "bash": "bash",
-    "python": "python3",
     "js": "node",
+    # "python" resolved dynamically from python_command.
 }
 
 
@@ -29,10 +30,24 @@ class ExecutionResult:
     duration: float
 
 
-def _get_interpreter(script_type: str) -> str | None:
-    """Return the interpreter path if found on PATH, else None."""
-    cmd = INTERPRETERS[script_type]
-    return shutil.which(cmd)
+def _resolve_command(script_type: str, python_command: str) -> list[str]:
+    """Return the argv prefix (interpreter + flags) for a script type.
+
+    For ``python``, ``python_command`` is shlex-split and the first token is
+    looked up on PATH. Empty / whitespace-only ``python_command`` falls back
+    to ``python3`` — a safety net for direct callers (tests, scripts) so they
+    don't need ``uv`` installed. The production flow always passes the
+    resolved ``AppConfig.python_command`` through.
+    """
+    if script_type == "python":
+        cmd = python_command.strip() or "python3"
+        parts = shlex.split(cmd)
+    else:
+        parts = [INTERPRETERS[script_type]]
+    exe = shutil.which(parts[0])
+    if exe is None:
+        raise InterpreterNotFoundError(f"{parts[0]} not found on PATH")
+    return [exe, *parts[1:]]
 
 
 async def execute_script(
@@ -41,15 +56,12 @@ async def execute_script(
     on_output: Callable[[str], None] | None = None,
     *,
     script_path: Path,
+    python_command: str = "python3",
 ) -> ExecutionResult:
     """Execute a script (read from ``script_path``) and stream output."""
-    interpreter = _get_interpreter(script.type)
-    if interpreter is None:
-        raise InterpreterNotFoundError(
-            f"{INTERPRETERS[script.type]} not found on PATH"
-        )
+    cmd_prefix = _resolve_command(script.type, python_command)
 
-    cmd = [interpreter, str(script_path)]
+    cmd = [*cmd_prefix, str(script_path)]
     if arg_values:
         cmd.extend(arg_values)
 

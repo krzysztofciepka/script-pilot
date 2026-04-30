@@ -113,9 +113,10 @@ class TestExecutor:
 
     @pytest.mark.asyncio
     async def test_interpreter_present_on_path(self):
-        from scriptpilot.executor import _get_interpreter
-        assert _get_interpreter("bash") is not None
-        assert _get_interpreter("python") is not None
+        from scriptpilot.executor import _resolve_command
+        # bash and js are static lookups; python uses python_command.
+        assert _resolve_command("bash", "python3")[0]
+        assert _resolve_command("python", "python3")[0]
 
     @pytest.mark.asyncio
     async def test_interpreter_not_found_raises(self, tmp_path, monkeypatch):
@@ -130,3 +131,85 @@ class TestExecutor:
         path = _materialize(script, tmp_path)
         with pytest.raises(InterpreterNotFoundError, match="bash not found"):
             await execute_script(script, script_path=path)
+
+
+class TestResolveCommand:
+    def test_bash_unchanged(self):
+        from scriptpilot.executor import _resolve_command
+        cmd = _resolve_command("bash", "uv run --script")
+        assert cmd[0].endswith("/bash") or cmd[0] == "bash"
+        assert len(cmd) == 1
+
+    def test_python_single_token(self):
+        from scriptpilot.executor import _resolve_command
+        cmd = _resolve_command("python", "python3")
+        assert len(cmd) == 1
+        assert cmd[0].endswith("/python3") or cmd[0] == "python3"
+
+    def test_python_multi_token_splits(self, monkeypatch):
+        import shutil
+        from scriptpilot.executor import _resolve_command
+        # Pretend `uv` is on PATH at /usr/bin/uv.
+        monkeypatch.setattr(shutil, "which", lambda c: f"/usr/bin/{c}" if c == "uv" else None)
+        cmd = _resolve_command("python", "uv run --script")
+        assert cmd == ["/usr/bin/uv", "run", "--script"]
+
+    def test_python_empty_falls_back_to_python3(self, monkeypatch):
+        import shutil
+        from scriptpilot.executor import _resolve_command
+        monkeypatch.setattr(shutil, "which", lambda c: f"/usr/bin/{c}" if c == "python3" else None)
+        cmd = _resolve_command("python", "")
+        assert cmd == ["/usr/bin/python3"]
+
+    def test_python_whitespace_falls_back_to_python3(self, monkeypatch):
+        import shutil
+        from scriptpilot.executor import _resolve_command
+        monkeypatch.setattr(shutil, "which", lambda c: f"/usr/bin/{c}" if c == "python3" else None)
+        cmd = _resolve_command("python", "   ")
+        assert cmd == ["/usr/bin/python3"]
+
+    def test_python_first_token_validated(self, monkeypatch):
+        import shutil
+        from scriptpilot.executor import _resolve_command, InterpreterNotFoundError
+        monkeypatch.setattr(shutil, "which", lambda c: None)
+        with pytest.raises(InterpreterNotFoundError, match="definitely-not-real"):
+            _resolve_command("python", "definitely-not-real --flag")
+
+
+class TestExecuteScriptPythonCommand:
+    @pytest.mark.asyncio
+    async def test_python_command_python3(self, tmp_path):
+        """Default 'python3' path runs without uv."""
+        script = Script(
+            name="py",
+            description="python test",
+            type="python",
+            content="print('hi from py')",
+        )
+        path = _materialize(script, tmp_path)
+        lines = []
+        result = await execute_script(
+            script,
+            on_output=lines.append,
+            script_path=path,
+            python_command="python3",
+        )
+        assert result.exit_code == 0
+        assert any("hi from py" in line for line in lines)
+
+    @pytest.mark.asyncio
+    async def test_python_command_unknown_raises(self, tmp_path):
+        from scriptpilot.executor import InterpreterNotFoundError
+        script = Script(
+            name="py",
+            description="python test",
+            type="python",
+            content="print('hi')",
+        )
+        path = _materialize(script, tmp_path)
+        with pytest.raises(InterpreterNotFoundError, match="definitely-not-real"):
+            await execute_script(
+                script,
+                script_path=path,
+                python_command="definitely-not-real --flag",
+            )
