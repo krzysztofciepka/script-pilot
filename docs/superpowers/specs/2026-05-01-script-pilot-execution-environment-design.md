@@ -56,7 +56,13 @@ class AppConfig(BaseModel):
 - `env` is a flat `{str: str}` dict.
 - Defaults on every new field — existing on-disk meta JSON loads
   cleanly without migration.
-- Empty `python_command` falls back to `python3` at execute time.
+- The `python_command` empty-string fallback is intentionally different
+  in two layers: `SettingsScreen` resets empty input to the user-facing
+  default `"uv run --script"` (so the placeholder and behaviour match);
+  `executor.execute_script`'s default arg is `"python3"` and its
+  internal `cmd or "python3"` guard is a safety net for direct callers
+  (tests, scripts) that don't want a uv dependency. The real production
+  flow always passes the resolved `AppConfig.python_command` through.
 
 ### Secrets module (new — `src/scriptpilot/secrets.py`)
 
