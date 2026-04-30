@@ -5,41 +5,21 @@ import tempfile
 from pathlib import Path
 
 from scriptpilot.models import Script
+from scriptpilot.paths import EXTENSIONS
 
 
 class ScriptStore:
-    """JSON-based script persistence."""
+    """Per-file script persistence.
+
+    Each script is stored as two files in ``self._dir``:
+      - ``<id>.<ext>``       — the script body (extension determined by type)
+      - ``<id>.meta.json``   — the Script model dumped without ``content``
+    """
 
     def __init__(self, path: Path | None = None):
-        self._path = path or Path.home() / ".scriptpilot" / "scripts.json"
+        self._dir = path or Path.home() / ".scriptpilot" / "scripts"
         self._scripts: dict[str, Script] = {}
         self._load()
-
-    def _load(self):
-        if not self._path.exists():
-            return
-        try:
-            data = json.loads(self._path.read_text())
-            for item in data.get("scripts", []):
-                script = Script(**item)
-                self._scripts[script.id] = script
-        except (json.JSONDecodeError, Exception):
-            backup = self._path.with_suffix(".json.bak")
-            self._path.rename(backup)
-
-    def _save(self):
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        data = {"scripts": [s.model_dump() for s in self._scripts.values()]}
-        fd, tmp = tempfile.mkstemp(
-            dir=self._path.parent, suffix=".tmp"
-        )
-        try:
-            with open(fd, "w") as f:
-                json.dump(data, f, indent=2)
-            Path(tmp).replace(self._path)
-        except Exception:
-            Path(tmp).unlink(missing_ok=True)
-            raise
 
     def list(self) -> list[Script]:
         return list(self._scripts.values())
@@ -48,13 +28,57 @@ class ScriptStore:
         return self._scripts.get(script_id)
 
     def add(self, script: Script):
+        self._write(script)
         self._scripts[script.id] = script
-        self._save()
 
     def update(self, script: Script):
+        self._write(script)
+        # Drop any stale body files with a different extension (handles type change).
+        new_ext = EXTENSIONS[script.type]
+        for ext in EXTENSIONS.values():
+            if ext == new_ext:
+                continue
+            (self._dir / f"{script.id}{ext}").unlink(missing_ok=True)
         self._scripts[script.id] = script
-        self._save()
 
     def delete(self, script_id: str):
+        for ext in EXTENSIONS.values():
+            (self._dir / f"{script_id}{ext}").unlink(missing_ok=True)
+        (self._dir / f"{script_id}.meta.json").unlink(missing_ok=True)
         self._scripts.pop(script_id, None)
-        self._save()
+
+    def path_for(self, script_id: str) -> Path:
+        """On-disk path of the script body. Used by executor and editor."""
+        script = self._scripts[script_id]
+        return self._dir / f"{script_id}{EXTENSIONS[script.type]}"
+
+    def _load(self):
+        self._dir.mkdir(parents=True, exist_ok=True)
+        for meta_path in sorted(self._dir.glob("*.meta.json")):
+            stem = meta_path.name[: -len(".meta.json")]
+            meta = json.loads(meta_path.read_text())
+            ext = EXTENSIONS[meta["type"]]
+            body_path = self._dir / f"{stem}{ext}"
+            content = body_path.read_text()
+            meta["id"] = stem
+            script = Script(**meta, content=content)
+            self._scripts[script.id] = script
+
+    def _write(self, script: Script):
+        body_path = self._dir / f"{script.id}{EXTENSIONS[script.type]}"
+        meta_path = self._dir / f"{script.id}.meta.json"
+
+        self._atomic_write(body_path, script.content)
+
+        meta = script.model_dump(exclude={"content"})
+        self._atomic_write(meta_path, json.dumps(meta, indent=2))
+
+    def _atomic_write(self, target: Path, text: str):
+        fd, tmp = tempfile.mkstemp(dir=target.parent, suffix=".tmp")
+        try:
+            with open(fd, "w") as f:
+                f.write(text)
+            Path(tmp).replace(target)
+        except Exception:
+            Path(tmp).unlink(missing_ok=True)
+            raise
