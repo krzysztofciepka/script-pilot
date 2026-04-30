@@ -23,11 +23,32 @@ class InterpreterNotFoundError(Exception):
     """Raised when the required interpreter is not on PATH."""
 
 
+class ScriptCwdError(Exception):
+    """Raised when a Script's configured cwd is missing or invalid."""
+
+
 @dataclass
 class ExecutionResult:
     exit_code: int
     timed_out: bool
     duration: float
+
+
+def _resolve_cwd(script_cwd: str | None) -> Path:
+    """Resolve the cwd to use for a script run.
+
+    ``None``, empty, or whitespace-only → ``Path.home()``.
+    Otherwise expand ``~`` and verify the path exists and is a directory;
+    raise ``ScriptCwdError`` if not.
+    """
+    if not script_cwd or not script_cwd.strip():
+        return Path.home()
+    expanded = Path(script_cwd).expanduser()
+    if not expanded.exists():
+        raise ScriptCwdError(f"cwd does not exist: {expanded}")
+    if not expanded.is_dir():
+        raise ScriptCwdError(f"cwd is not a directory: {expanded}")
+    return expanded
 
 
 def _resolve_command(script_type: str, python_command: str) -> list[str]:
@@ -60,6 +81,7 @@ async def execute_script(
 ) -> ExecutionResult:
     """Execute a script (read from ``script_path``) and stream output."""
     cmd_prefix = _resolve_command(script.type, python_command)
+    cwd = _resolve_cwd(script.cwd)
 
     cmd = [*cmd_prefix, str(script_path)]
     if arg_values:
@@ -70,6 +92,7 @@ async def execute_script(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
+        cwd=str(cwd),
         start_new_session=True,
     )
 

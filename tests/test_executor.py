@@ -213,3 +213,84 @@ class TestExecuteScriptPythonCommand:
                 script_path=path,
                 python_command="definitely-not-real --flag",
             )
+
+
+class TestResolveCwd:
+    def test_none_returns_home(self):
+        from scriptpilot.executor import _resolve_cwd
+        assert _resolve_cwd(None) == Path.home()
+
+    def test_empty_returns_home(self):
+        from scriptpilot.executor import _resolve_cwd
+        assert _resolve_cwd("") == Path.home()
+        assert _resolve_cwd("   ") == Path.home()
+
+    def test_existing_dir(self, tmp_path):
+        from scriptpilot.executor import _resolve_cwd
+        assert _resolve_cwd(str(tmp_path)) == tmp_path
+
+    def test_tilde_expansion(self):
+        from scriptpilot.executor import _resolve_cwd
+        assert _resolve_cwd("~") == Path.home()
+
+    def test_missing_dir_raises(self):
+        from scriptpilot.executor import _resolve_cwd, ScriptCwdError
+        with pytest.raises(ScriptCwdError, match="cwd does not exist"):
+            _resolve_cwd("/nonexistent/path/that/cannot/be/real")
+
+    def test_file_not_directory_raises(self, tmp_path):
+        from scriptpilot.executor import _resolve_cwd, ScriptCwdError
+        f = tmp_path / "afile"
+        f.write_text("hi")
+        with pytest.raises(ScriptCwdError, match="not a directory"):
+            _resolve_cwd(str(f))
+
+
+class TestExecuteScriptCwd:
+    @pytest.mark.asyncio
+    async def test_cwd_applied(self, tmp_path):
+        script = Script(
+            name="pwd",
+            description="prints pwd",
+            type="bash",
+            content="pwd",
+            cwd=str(tmp_path),
+        )
+        path = _materialize(script, tmp_path)
+        lines = []
+        result = await execute_script(
+            script, on_output=lines.append, script_path=path,
+        )
+        assert result.exit_code == 0
+        # Resolve to handle macOS /private/var symlink quirks.
+        assert any(str(tmp_path.resolve()) in line for line in lines)
+
+    @pytest.mark.asyncio
+    async def test_cwd_default_is_home(self, tmp_path):
+        script = Script(
+            name="pwd",
+            description="prints pwd",
+            type="bash",
+            content="pwd",
+        )
+        path = _materialize(script, tmp_path)
+        lines = []
+        result = await execute_script(
+            script, on_output=lines.append, script_path=path,
+        )
+        assert result.exit_code == 0
+        assert any(str(Path.home()) in line for line in lines)
+
+    @pytest.mark.asyncio
+    async def test_cwd_missing_raises(self, tmp_path):
+        from scriptpilot.executor import ScriptCwdError
+        script = Script(
+            name="pwd",
+            description="prints pwd",
+            type="bash",
+            content="pwd",
+            cwd="/nonexistent/path/that/cannot/be/real",
+        )
+        path = _materialize(script, tmp_path)
+        with pytest.raises(ScriptCwdError, match="cwd does not exist"):
+            await execute_script(script, script_path=path)
