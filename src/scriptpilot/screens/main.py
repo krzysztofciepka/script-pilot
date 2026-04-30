@@ -196,6 +196,7 @@ class MainScreen(Screen):
                     script,
                     arg_values=arg_values,
                     on_output=collect_output,
+                    script_path=self._store.path_for(script.id),
                 )
                 panel.show_finished(result.exit_code, result.duration, result.timed_out)
 
