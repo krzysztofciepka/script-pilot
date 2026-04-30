@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from scriptpilot.models import Script
+from scriptpilot.secrets import load_secrets
 
 INTERPRETERS = {
     "bash": "bash",
@@ -82,6 +83,8 @@ async def execute_script(
     """Execute a script (read from ``script_path``) and stream output."""
     cmd_prefix = _resolve_command(script.type, python_command)
     cwd = _resolve_cwd(script.cwd)
+    secrets = load_secrets()
+    env = {**os.environ, **secrets, **script.env}
 
     cmd = [*cmd_prefix, str(script_path)]
     if arg_values:
@@ -93,6 +96,7 @@ async def execute_script(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         cwd=str(cwd),
+        env=env,
         start_new_session=True,
     )
 

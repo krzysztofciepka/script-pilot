@@ -294,3 +294,72 @@ class TestExecuteScriptCwd:
         path = _materialize(script, tmp_path)
         with pytest.raises(ScriptCwdError, match="cwd does not exist"):
             await execute_script(script, script_path=path)
+
+
+class TestExecuteScriptEnv:
+    @pytest.mark.asyncio
+    async def test_per_script_env_applied(self, tmp_path):
+        script = Script(
+            name="env",
+            description="echoes FOO",
+            type="bash",
+            content='echo "FOO=$FOO"',
+            env={"FOO": "bar"},
+        )
+        path = _materialize(script, tmp_path)
+        lines = []
+        result = await execute_script(
+            script, on_output=lines.append, script_path=path,
+        )
+        assert result.exit_code == 0
+        assert any("FOO=bar" in line for line in lines)
+
+    @pytest.mark.asyncio
+    async def test_secrets_loaded_into_env(self, tmp_path, monkeypatch):
+        from scriptpilot import executor as executor_mod
+        monkeypatch.setattr(
+            executor_mod, "load_secrets",
+            lambda: {"JIRA_TOKEN": "secret123"},
+        )
+        script = Script(
+            name="secrets",
+            description="echoes JIRA_TOKEN",
+            type="bash",
+            content='echo "JIRA_TOKEN=$JIRA_TOKEN"',
+        )
+        path = _materialize(script, tmp_path)
+        lines = []
+        result = await execute_script(
+            script, on_output=lines.append, script_path=path,
+        )
+        assert result.exit_code == 0
+        assert any("JIRA_TOKEN=secret123" in line for line in lines)
+
+    @pytest.mark.asyncio
+    async def test_env_precedence_script_overrides_secrets_overrides_os(
+        self, tmp_path, monkeypatch
+    ):
+        """script.env > secrets > os.environ."""
+        from scriptpilot import executor as executor_mod
+        monkeypatch.setenv("X", "from_env")
+        monkeypatch.setenv("Y", "y_from_env")
+        monkeypatch.setattr(
+            executor_mod, "load_secrets",
+            lambda: {"X": "from_secrets", "Y": "y_from_secrets", "Z": "z_secret"},
+        )
+        script = Script(
+            name="prec",
+            description="prints precedence",
+            type="bash",
+            content='echo "X=$X"; echo "Y=$Y"; echo "Z=$Z"',
+            env={"X": "from_script"},
+        )
+        path = _materialize(script, tmp_path)
+        lines = []
+        result = await execute_script(
+            script, on_output=lines.append, script_path=path,
+        )
+        assert result.exit_code == 0
+        assert any("X=from_script" in line for line in lines)
+        assert any("Y=y_from_secrets" in line for line in lines)
+        assert any("Z=z_secret" in line for line in lines)
