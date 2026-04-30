@@ -157,7 +157,7 @@ Removals:
 
 Caller update:
 
-- `screens/run.py` — the one place that calls `execute_script` passes `script_path=self._store.path_for(script.id)`. The run screen already has the store reference.
+- `screens/main.py` — `MainScreen._execute` (the one place that calls `execute_script`) passes `script_path=self._store.path_for(script.id)`. `MainScreen` already holds the store reference.
 
 The "scripts that were never saved" case does not exist: the run screen only runs scripts already loaded from `ScriptStore`.
 
@@ -218,7 +218,7 @@ Each test that calls `execute_script` now passes `script_path`. A small fixture 
 **Edited:**
 - `src/scriptpilot/storage.py` — rewritten around per-file storage (no migration). New `path_for()`. Constructor takes a directory.
 - `src/scriptpilot/executor.py` — drop tempfile, accept `script_path`. `EXTENSIONS` moves out.
-- `src/scriptpilot/screens/run.py` — pass `script_path=self._store.path_for(script.id)` to `execute_script`.
+- `src/scriptpilot/screens/main.py` — `MainScreen._execute` passes `script_path=self._store.path_for(script.id)` to `execute_script`.
 - `tests/test_storage.py` — rewritten around the new contract.
 - `tests/test_executor.py` — updated to provide `script_path`.
 
@@ -227,7 +227,7 @@ Each test that calls `execute_script` now passes `script_path`. A small fixture 
 
 **Unchanged:**
 - `src/scriptpilot/models.py` — `Script` keeps `content` as an in-memory field.
-- `src/scriptpilot/history.py`, `src/scriptpilot/app.py`, all screens except `run.py`, `src/scriptpilot/openrouter.py`.
+- `src/scriptpilot/history.py`, `src/scriptpilot/app.py`, all screens except `main.py`, `src/scriptpilot/openrouter.py`.
 
 ## Acceptance criteria
 
