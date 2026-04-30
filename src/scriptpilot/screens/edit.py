@@ -8,6 +8,7 @@ from textual.widgets import Button, Input, Label, Select, TextArea
 
 from scriptpilot.models import Script, ScriptArg
 from scriptpilot.widgets.arg_editor import ArgEditor
+from scriptpilot.widgets.env_editor import EnvEditor
 
 SCRIPT_TYPES = [("Bash", "bash"), ("Python", "python"), ("JavaScript", "js")]
 
@@ -94,7 +95,14 @@ class EditScreen(ModalScreen[Script | None]):
                     id="content-area",
                     language=lang,
                 )
+                yield Label("Working Directory:")
+                yield Input(
+                    value=s.cwd if (s and s.cwd) else "",
+                    placeholder="~ (default: home)",
+                    id="cwd-input",
+                )
                 yield ArgEditor(s.args if s else [])
+                yield EnvEditor(s.env if s else {})
             with Horizontal(id="button-bar"):
                 yield Button("Cancel", id="cancel-btn")
                 yield Button("Save", id="save-btn", variant="primary")
@@ -112,6 +120,8 @@ class EditScreen(ModalScreen[Script | None]):
         content = self.query_one("#content-area", TextArea).text
         timeout_str = self.query_one("#timeout-input", Input).value.strip()
         args = self.query_one(ArgEditor).get_args()
+        cwd_str = self.query_one("#cwd-input", Input).value.strip() or None
+        env = self.query_one(EnvEditor).get_env()
 
         if not name:
             self.notify("Script name is required", severity="error")
@@ -132,6 +142,8 @@ class EditScreen(ModalScreen[Script | None]):
             self._script.content = content
             self._script.timeout = timeout
             self._script.args = args
+            self._script.cwd = cwd_str
+            self._script.env = env
             self.dismiss(self._script)
         else:
             script = Script(
@@ -141,5 +153,7 @@ class EditScreen(ModalScreen[Script | None]):
                 content=content,
                 timeout=timeout,
                 args=args,
+                cwd=cwd_str,
+                env=env,
             )
             self.dismiss(script)
