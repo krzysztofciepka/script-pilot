@@ -40,7 +40,16 @@ class ScriptPilotApp(App):
         self._history = HistoryStore()
 
     def on_mount(self):
+        self.dark = (self._config.theme == "dark")
         self.push_screen(MainScreen(self._store, self._history))
+
+    def action_toggle_dark(self):
+        super().action_toggle_dark()
+        self._config.theme = "dark" if self.dark else "light"
+        try:
+            self._save_config()
+        except Exception as e:
+            self.notify(f"Could not save theme: {e}", severity="error")
 
     def _load_config(self) -> AppConfig:
         if CONFIG_PATH.exists():
@@ -61,6 +70,7 @@ class ScriptPilotApp(App):
         def on_result(config: AppConfig | None):
             if config:
                 self._config = config
+                self.dark = (config.theme == "dark")
                 self._save_config()
                 self.notify("Settings saved")
 
