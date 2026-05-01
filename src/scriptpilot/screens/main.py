@@ -9,6 +9,7 @@ from scriptpilot.models import Script, ScriptArg, RunRecord
 from scriptpilot.storage import ScriptStore
 from scriptpilot.history import HistoryStore
 from scriptpilot.executor import execute_script, InterpreterNotFoundError, ScriptCwdError
+from scriptpilot.editor import edit_file, EditorError
 from scriptpilot.widgets.script_list import ScriptList, ScriptSelected
 from scriptpilot.widgets.main_panel import MainPanel
 from scriptpilot.screens.edit import EditScreen
@@ -22,6 +23,7 @@ class MainScreen(Screen):
     BINDINGS = [
         ("n", "new_script", "New"),
         ("e", "edit_script", "Edit"),
+        ("E", "edit_in_external", "Editor"),
         ("d", "delete_script", "Delete"),
         ("r", "run_script", "Run"),
         ("p", "prompt_script", "Prompt"),
@@ -81,6 +83,29 @@ class MainScreen(Screen):
         self.app.push_screen(
             EditScreen(self._selected_script), callback=on_result
         )
+
+    def action_edit_in_external(self):
+        if not self._selected_script:
+            self.notify("No script selected", severity="warning")
+            return
+        script = self._selected_script
+        path = self._store.path_for(script.id)
+        try:
+            edit_file(self.app, self.app._config, path)
+        except EditorError as e:
+            self.notify(str(e), severity="error")
+            return
+        try:
+            new_content = path.read_text()
+        except OSError as e:
+            self.notify(f"Could not reload script: {e}", severity="error")
+            return
+        if new_content != script.content:
+            script.content = new_content
+            self._store.update(script)
+            self._refresh_list()
+            last_run = self._get_last_run(script.id)
+            self.query_one(MainPanel).show_script_details(script, last_run)
 
     def action_delete_script(self):
         if not self._selected_script:
