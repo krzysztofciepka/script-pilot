@@ -9,6 +9,8 @@ from textual.widgets import Button, Input, Label, Select, TextArea
 from scriptpilot.models import Script, ScriptArg
 from scriptpilot.widgets.arg_editor import ArgEditor
 from scriptpilot.widgets.env_editor import EnvEditor
+from scriptpilot.editor import edit_file, EditorError
+from scriptpilot.tempscript import materialize_draft
 
 SCRIPT_TYPES = [("Bash", "bash"), ("Python", "python"), ("JavaScript", "js")]
 
@@ -25,6 +27,10 @@ class ScriptSaved(Message):
 
 class EditScreen(ModalScreen[Script | None]):
     """Modal screen for creating or editing a script."""
+
+    BINDINGS = [
+        ("E", "edit_in_external", "Editor"),
+    ]
 
     DEFAULT_CSS = """
     EditScreen {
@@ -112,6 +118,19 @@ class EditScreen(ModalScreen[Script | None]):
             self.dismiss(None)
         elif event.button.id == "save-btn":
             self._save()
+
+    def action_edit_in_external(self):
+        text_area = self.query_one("#content-area", TextArea)
+        type_select = self.query_one("#type-select", Select)
+        script_type = type_select.value
+        tmp = materialize_draft(text_area.text, script_type)
+        try:
+            edit_file(self.app, self.app._config, tmp)
+            text_area.load_text(tmp.read_text())
+        except EditorError as e:
+            self.notify(str(e), severity="error")
+        finally:
+            tmp.unlink(missing_ok=True)
 
     def _save(self):
         name = self.query_one("#name-input", Input).value.strip()
