@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import stat
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from scriptpilot.editor import EditorError, resolve_editor
+from scriptpilot.editor import EditorError, _run_editor, resolve_editor
 from scriptpilot.models import AppConfig
 
 
@@ -62,3 +64,53 @@ class TestResolveEditor:
         with patch("shutil.which", return_value="/usr/bin/vim"):
             argv = resolve_editor(config)
         assert argv == ["vim"]
+
+
+class TestRunEditor:
+    def test_editor_invoked_on_file(self, tmp_path):
+        """A fake editor (shell script) appends a marker; we verify it ran on the target file."""
+        target = tmp_path / "script.sh"
+        target.write_text("echo original\n")
+
+        fake_editor = tmp_path / "fake_editor.sh"
+        fake_editor.write_text(
+            '#!/bin/sh\n'
+            'echo "edited by fake_editor" >> "$1"\n'
+        )
+        fake_editor.chmod(
+            fake_editor.stat().st_mode
+            | stat.S_IEXEC
+            | stat.S_IRGRP
+            | stat.S_IXGRP
+            | stat.S_IXOTH
+        )
+
+        _run_editor([str(fake_editor)], target)
+
+        text = target.read_text()
+        assert "echo original" in text
+        assert "edited by fake_editor" in text
+
+    def test_raises_editor_error_when_binary_missing(self, tmp_path):
+        target = tmp_path / "script.sh"
+        target.write_text("x")
+        with pytest.raises(EditorError):
+            _run_editor(["nonexistent_editor_xyz_zzz"], target)
+
+    def test_tolerates_nonzero_exit(self, tmp_path):
+        """Editor that exits non-zero should not raise."""
+        target = tmp_path / "script.sh"
+        target.write_text("x")
+
+        fake_editor = tmp_path / "exit_one.sh"
+        fake_editor.write_text('#!/bin/sh\nexit 1\n')
+        fake_editor.chmod(
+            fake_editor.stat().st_mode
+            | stat.S_IEXEC
+            | stat.S_IRGRP
+            | stat.S_IXGRP
+            | stat.S_IXOTH
+        )
+
+        # Should not raise
+        _run_editor([str(fake_editor)], target)
