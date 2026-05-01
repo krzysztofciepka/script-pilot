@@ -4,13 +4,15 @@ from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll, Horizontal
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Select, TextArea
+from textual.widgets import Button, Input, Label, RichLog, Select, TextArea
 
 from scriptpilot.models import Script, ScriptArg
 from scriptpilot.widgets.arg_editor import ArgEditor
 from scriptpilot.widgets.env_editor import EnvEditor
 from scriptpilot.editor import edit_file, EditorError
 from scriptpilot.tempscript import materialize_draft
+from scriptpilot.executor import execute_script, InterpreterNotFoundError, ScriptCwdError
+from scriptpilot.screens.run import RunScreen
 
 SCRIPT_TYPES = [("Bash", "bash"), ("Python", "python"), ("JavaScript", "js")]
 
@@ -55,7 +57,20 @@ class EditScreen(ModalScreen[Script | None]):
     }
     EditScreen #content-area {
         min-height: 10;
-        height: 15;
+        height: 1fr;
+        margin-bottom: 1;
+    }
+    EditScreen #scratch-output {
+        display: none;
+        height: 8;
+        border: solid $accent;
+        margin-bottom: 1;
+    }
+    EditScreen #scratch-output.visible {
+        display: block;
+    }
+    EditScreen .editor-hint {
+        color: $text-muted;
         margin-bottom: 1;
     }
     EditScreen #button-bar {
@@ -101,6 +116,8 @@ class EditScreen(ModalScreen[Script | None]):
                     id="content-area",
                     language=lang,
                 )
+                yield Label("[dim]Press E to edit in $EDITOR[/dim]", classes="editor-hint")
+                yield RichLog(id="scratch-output", highlight=True, markup=True)
                 yield Label("Working Directory:")
                 yield Input(
                     value=s.cwd if (s and s.cwd) else "",
@@ -110,6 +127,7 @@ class EditScreen(ModalScreen[Script | None]):
                 yield ArgEditor(s.args if s else [])
                 yield EnvEditor(s.env if s else {})
             with Horizontal(id="button-bar"):
+                yield Button("Run", id="run-btn")
                 yield Button("Cancel", id="cancel-btn")
                 yield Button("Save", id="save-btn", variant="primary")
 
@@ -118,6 +136,8 @@ class EditScreen(ModalScreen[Script | None]):
             self.dismiss(None)
         elif event.button.id == "save-btn":
             self._save()
+        elif event.button.id == "run-btn":
+            self._scratch_run()
 
     def action_edit_in_external(self):
         text_area = self.query_one("#content-area", TextArea)
@@ -132,7 +152,8 @@ class EditScreen(ModalScreen[Script | None]):
         finally:
             tmp.unlink(missing_ok=True)
 
-    def _save(self):
+    def _collect_form(self) -> Script | None:
+        """Read the form into a Script. Returns None if validation fails (already notified)."""
         name = self.query_one("#name-input", Input).value.strip()
         desc = self.query_one("#desc-input", Input).value.strip()
         script_type = self.query_one("#type-select", Select).value
@@ -144,10 +165,10 @@ class EditScreen(ModalScreen[Script | None]):
 
         if not name:
             self.notify("Script name is required", severity="error")
-            return
+            return None
         if not content.strip():
             self.notify("Script content is required", severity="error")
-            return
+            return None
 
         try:
             timeout = int(timeout_str)
@@ -163,16 +184,65 @@ class EditScreen(ModalScreen[Script | None]):
             self._script.args = args
             self._script.cwd = cwd_str
             self._script.env = env
-            self.dismiss(self._script)
-        else:
-            script = Script(
-                name=name,
-                description=desc,
-                type=script_type,
-                content=content,
-                timeout=timeout,
-                args=args,
-                cwd=cwd_str,
-                env=env,
-            )
+            return self._script
+
+        return Script(
+            name=name,
+            description=desc,
+            type=script_type,
+            content=content,
+            timeout=timeout,
+            args=args,
+            cwd=cwd_str,
+            env=env,
+        )
+
+    def _save(self):
+        script = self._collect_form()
+        if script is not None:
             self.dismiss(script)
+
+    def _scratch_run(self):
+        draft = self._collect_form()
+        if draft is None:
+            return
+
+        if draft.args:
+            def on_args(values: list[str] | None):
+                if values is not None:
+                    self._scratch_execute(draft, values)
+
+            self.app.push_screen(RunScreen(draft), callback=on_args)
+        else:
+            self._scratch_execute(draft, None)
+
+    def _scratch_execute(self, draft: Script, arg_values: list[str] | None):
+        log = self.query_one("#scratch-output", RichLog)
+        log.add_class("visible")
+        log.clear()
+        log.write(f"[bold]$ running draft '{draft.name}'[/bold]")
+
+        tmp = materialize_draft(draft.content, draft.type)
+
+        async def run():
+            try:
+                result = await execute_script(
+                    draft,
+                    arg_values=arg_values,
+                    on_output=log.write,
+                    script_path=tmp,
+                    python_command=self.app._config.python_command,
+                )
+                tag = "red" if result.exit_code != 0 else "green"
+                status = "timed out" if result.timed_out else f"exit {result.exit_code}"
+                log.write(f"[{tag}]— {status} in {result.duration:.2f}s[/]")
+            except (InterpreterNotFoundError, ScriptCwdError) as e:
+                log.write(f"[red]error:[/red] {e}")
+                self.notify(str(e), severity="error")
+            except Exception as e:
+                log.write(f"[red]error:[/red] {e}")
+                self.notify(str(e), severity="error")
+            finally:
+                tmp.unlink(missing_ok=True)
+
+        self.run_worker(run(), name="scratch-execute", exclusive=True)
