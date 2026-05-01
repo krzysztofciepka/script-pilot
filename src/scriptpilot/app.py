@@ -30,9 +30,14 @@ class ScriptPilotApp(App):
 
     def __init__(self):
         super().__init__()
-        self._store = ScriptStore()
-        self._history = HistoryStore()
         self._config = self._load_config()
+        scripts_path = (
+            Path(self._config.scripts_dir).expanduser()
+            if self._config.scripts_dir
+            else None
+        )
+        self._store = ScriptStore(path=scripts_path)
+        self._history = HistoryStore()
 
     def on_mount(self):
         self.push_screen(MainScreen(self._store, self._history))
