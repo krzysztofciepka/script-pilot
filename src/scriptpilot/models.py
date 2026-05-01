@@ -51,3 +51,6 @@ class AppConfig(BaseModel):
 
     default_model: str = "openai/gpt-4o"
     python_command: str = "uv run --script"
+    editor: str | None = None
+    scripts_dir: str | None = None
+    theme: Literal["dark", "light"] = "dark"

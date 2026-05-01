@@ -168,6 +168,43 @@ class TestAppConfigPythonCommand:
         assert config.python_command == "uv run --script"
 
 
+class TestAppConfigAuthoring:
+    def test_editor_default_none(self):
+        config = AppConfig()
+        assert config.editor is None
+
+    def test_editor_custom(self):
+        config = AppConfig(editor="code --wait")
+        assert config.editor == "code --wait"
+
+    def test_scripts_dir_default_none(self):
+        config = AppConfig()
+        assert config.scripts_dir is None
+
+    def test_scripts_dir_custom(self):
+        config = AppConfig(scripts_dir="~/myscripts")
+        assert config.scripts_dir == "~/myscripts"
+
+    def test_theme_default_dark(self):
+        config = AppConfig()
+        assert config.theme == "dark"
+
+    def test_theme_set_light(self):
+        config = AppConfig(theme="light")
+        assert config.theme == "light"
+
+    def test_theme_invalid_rejected(self):
+        with pytest.raises(Exception):
+            AppConfig(theme="purple")
+
+    def test_backward_compat_old_config(self):
+        """A config dict missing the new fields loads with defaults."""
+        config = AppConfig(**{"default_model": "openai/gpt-4o"})
+        assert config.editor is None
+        assert config.scripts_dir is None
+        assert config.theme == "dark"
+
+
 from scriptpilot.models import RunRecord
 
 
