@@ -5,7 +5,7 @@ import os
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label
+from textual.widgets import Button, Input, Label, Select
 
 from scriptpilot.models import AppConfig
 from scriptpilot.secrets import SECRETS_PATH, load_secrets
@@ -53,6 +53,8 @@ class SettingsScreen(ModalScreen[AppConfig | None]):
         else:
             secrets_status = "[dim]not present[/dim]"
 
+        scripts_dir_display = self._config.scripts_dir or "~/.scriptpilot/scripts (default)"
+
         with Vertical(id="settings-container"):
             yield Label("[bold]Settings[/bold]")
             yield Label("")
@@ -70,6 +72,21 @@ class SettingsScreen(ModalScreen[AppConfig | None]):
                 placeholder="uv run --script",
                 id="python-cmd-input",
             )
+            yield Label("Editor command:")
+            yield Input(
+                value=self._config.editor or "",
+                placeholder="$VISUAL or $EDITOR or vi",
+                id="editor-input",
+            )
+            yield Label("Theme:")
+            yield Select(
+                [("Dark", "dark"), ("Light", "light")],
+                value=self._config.theme,
+                allow_blank=False,
+                id="theme-select",
+            )
+            yield Label(f"Scripts dir: {scripts_dir_display}")
+            yield Label("[dim]edit ~/.scriptpilot/config.json to change[/dim]")
             yield Label(f"Secrets file: {SECRETS_PATH} [{secrets_status}]")
             yield Label(
                 "[dim]One KEY=VALUE per line. Edit with your editor.[/dim]"
@@ -86,8 +103,13 @@ class SettingsScreen(ModalScreen[AppConfig | None]):
             python_cmd = self.query_one("#python-cmd-input", Input).value.strip()
             if not python_cmd:
                 python_cmd = "uv run --script"
+            editor_val = self.query_one("#editor-input", Input).value.strip() or None
+            theme_val = self.query_one("#theme-select", Select).value
             config = AppConfig(
                 default_model=model or "openai/gpt-4o",
                 python_command=python_cmd,
+                editor=editor_val,
+                theme=theme_val,
+                scripts_dir=self._config.scripts_dir,
             )
             self.dismiss(config)
