@@ -54,3 +54,53 @@ def validate_and_coerce(arg: ScriptArg, raw: str | bool) -> str | bool:
     # string and path: any non-empty value passes; path resolution
     # happens later in build_argv.
     return text
+
+
+def _resolve_cwd(script_cwd: str | None) -> Path:
+    """Mirror executor._resolve_cwd: None/empty/whitespace → home; else expanduser.
+
+    Unlike the executor we do NOT verify the directory exists — that's the
+    executor's job at run time. We only need a base Path for joining.
+    """
+    if not script_cwd or not script_cwd.strip():
+        return Path.home()
+    return Path(script_cwd).expanduser()
+
+
+def _resolve_path_value(raw: str, script_cwd: str | None) -> str:
+    """Resolve a typed path: expand ~, then join against the script cwd if relative."""
+    p = Path(raw).expanduser()
+    if p.is_absolute():
+        return str(p)
+    return str(_resolve_cwd(script_cwd) / p)
+
+
+def build_argv(script: Script, validated: list[str | bool]) -> list[str]:
+    """Build the final argv list for a script run."""
+    argv: list[str] = []
+    for arg, value in zip(script.args, validated):
+        if arg.type == "boolean":
+            if script.arg_style == "flags":
+                if value:
+                    argv.append(f"--{arg.name}")
+                # False: omit
+            else:
+                argv.append("true" if value else "false")
+            continue
+
+        # value is a str at this point
+        text = value if isinstance(value, str) else str(value)
+
+        if arg.type == "path" and text:
+            text = _resolve_path_value(text, script.cwd)
+
+        if script.arg_style == "flags":
+            if text == "":
+                # optional empty: omit the flag
+                continue
+            argv.append(f"--{arg.name}")
+            argv.append(text)
+        else:
+            argv.append(text)
+
+    return argv
