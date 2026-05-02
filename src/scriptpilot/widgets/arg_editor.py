@@ -7,7 +7,15 @@ from textual.widgets import Button, Input, Label, Select, Switch
 
 from scriptpilot.models import ScriptArg
 
-ARG_TYPES = [("string", "string"), ("boolean", "boolean"), ("integer", "integer")]
+ARG_TYPES = [
+    ("string", "string"),
+    ("boolean", "boolean"),
+    ("integer", "integer"),
+    ("path", "path"),
+    ("choice", "choice"),
+]
+
+ARG_STYLES = [("positional", "positional"), ("--flags", "flags")]
 
 
 class ArgRow(Widget):
@@ -15,24 +23,33 @@ class ArgRow(Widget):
 
     DEFAULT_CSS = """
     ArgRow {
-        layout: horizontal;
-        height: 3;
+        height: auto;
         margin-bottom: 1;
     }
-    ArgRow Input {
+    ArgRow .arg-main {
+        height: 3;
+    }
+    ArgRow .arg-main Input {
         width: 1fr;
         margin-right: 1;
     }
-    ArgRow Select {
+    ArgRow .arg-main Select {
         width: 16;
         margin-right: 1;
     }
-    ArgRow Switch {
+    ArgRow .arg-main Switch {
         width: 12;
         margin-right: 1;
     }
-    ArgRow Button {
+    ArgRow .arg-main Button {
         width: 8;
+    }
+    ArgRow .arg-choices-hidden {
+        display: none;
+    }
+    ArgRow #arg-choices {
+        margin-top: 0;
+        margin-bottom: 0;
     }
     """
 
@@ -41,27 +58,50 @@ class ArgRow(Widget):
         self._arg = arg
 
     def compose(self) -> ComposeResult:
+        with Horizontal(classes="arg-main"):
+            yield Input(
+                value=self._arg.name if self._arg else "",
+                placeholder="Name",
+                id="arg-name",
+            )
+            yield Select(
+                ARG_TYPES,
+                value=self._arg.type if self._arg else "string",
+                id="arg-type",
+            )
+            yield Label("Req:")
+            yield Switch(value=self._arg.required if self._arg else True, id="arg-required")
+            yield Input(
+                value=str(self._arg.default) if self._arg and self._arg.default is not None else "",
+                placeholder="Default",
+                id="arg-default",
+            )
+            yield Button("X", variant="error", id="arg-remove")
+        choices_classes = "arg-choices-hidden"
+        if self._arg and self._arg.type == "choice":
+            choices_classes = ""
         yield Input(
-            value=self._arg.name if self._arg else "",
-            placeholder="Name",
-            id="arg-name",
+            value=",".join(self._arg.choices) if self._arg and self._arg.choices else "",
+            placeholder="comma-separated choices, e.g. dev,staging,prod",
+            id="arg-choices",
+            classes=choices_classes,
         )
-        yield Select(
-            ARG_TYPES,
-            value=self._arg.type if self._arg else "string",
-            id="arg-type",
-        )
-        yield Label("Req:")
-        yield Switch(value=self._arg.required if self._arg else True, id="arg-required")
-        yield Input(
-            value=str(self._arg.default) if self._arg and self._arg.default is not None else "",
-            placeholder="Default",
-            id="arg-default",
-        )
-        yield Button("X", variant="error", id="arg-remove")
+
+    def on_select_changed(self, event: Select.Changed):
+        if event.select.id != "arg-type":
+            return
+        choices_input = self.query_one("#arg-choices", Input)
+        if event.value == "choice":
+            choices_input.remove_class("arg-choices-hidden")
+        else:
+            choices_input.add_class("arg-choices-hidden")
 
     def to_script_arg(self) -> ScriptArg | None:
-        """Convert this row to a ScriptArg, or None if name is empty."""
+        """Convert this row to a ScriptArg, or None if name is empty.
+
+        May raise pydantic.ValidationError when the user produces an
+        inconsistent combination (e.g. choice type with empty choices).
+        """
         name = self.query_one("#arg-name", Input).value.strip()
         if not name:
             return None
@@ -81,7 +121,15 @@ class ArgRow(Widget):
             else:
                 default = default_str
 
-        return ScriptArg(name=name, type=arg_type, required=required, default=default)
+        choices = None
+        if arg_type == "choice":
+            raw = self.query_one("#arg-choices", Input).value
+            choices = [c.strip() for c in raw.split(",") if c.strip()] or None
+
+        return ScriptArg(
+            name=name, type=arg_type, required=required,
+            default=default, choices=choices,
+        )
 
 
 class ArgEditor(Widget):
@@ -99,14 +147,30 @@ class ArgEditor(Widget):
     ArgEditor #add-arg-btn {
         margin-top: 1;
     }
+    ArgEditor .arg-editor-header {
+        height: 3;
+    }
+    ArgEditor #arg-style-select {
+        width: 22;
+        margin-left: 2;
+    }
     """
 
-    def __init__(self, args: list[ScriptArg] | None = None):
+    def __init__(self, args: list[ScriptArg] | None = None,
+                 arg_style: str = "positional"):
         super().__init__()
         self._initial_args = args or []
+        self._initial_arg_style = arg_style
 
     def compose(self) -> ComposeResult:
-        yield Label("[bold]Arguments[/bold]")
+        with Horizontal(classes="arg-editor-header"):
+            yield Label("[bold]Arguments[/bold]")
+            yield Select(
+                ARG_STYLES,
+                value=self._initial_arg_style,
+                allow_blank=False,
+                id="arg-style-select",
+            )
         with Vertical(id="arg-list"):
             for arg in self._initial_args:
                 yield ArgRow(arg)
@@ -126,3 +190,6 @@ class ArgEditor(Widget):
             if arg:
                 args.append(arg)
         return args
+
+    def get_arg_style(self) -> str:
+        return self.query_one("#arg-style-select", Select).value
