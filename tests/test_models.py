@@ -206,6 +206,44 @@ class TestScriptCwdEnv:
         assert s.env == {}
 
 
+class TestScriptArgStyle:
+    def test_arg_style_default_positional(self):
+        s = Script(name="x", description="x", type="bash", content="x")
+        assert s.arg_style == "positional"
+
+    def test_arg_style_flags(self):
+        s = Script(
+            name="x", description="x", type="bash", content="x",
+            arg_style="flags",
+        )
+        assert s.arg_style == "flags"
+
+    def test_arg_style_invalid_rejected(self):
+        with pytest.raises(Exception):
+            Script(
+                name="x", description="x", type="bash", content="x",
+                arg_style="kwargs",
+            )
+
+    def test_arg_style_roundtrip(self):
+        s = Script(
+            name="x", description="x", type="bash", content="x",
+            arg_style="flags",
+        )
+        data = s.model_dump()
+        s2 = Script(**data)
+        assert s2.arg_style == "flags"
+
+    def test_backward_compat_no_arg_style_field(self):
+        """Existing meta files without `arg_style` load as positional."""
+        data = {
+            "name": "x", "description": "x", "type": "bash",
+            "content": "x", "id": "abc",
+        }
+        s = Script(**data)
+        assert s.arg_style == "positional"
+
+
 class TestAppConfigPythonCommand:
     def test_python_command_default(self):
         config = AppConfig()

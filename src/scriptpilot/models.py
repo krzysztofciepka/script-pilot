@@ -42,6 +42,7 @@ class Script(BaseModel):
     favorite: bool = False
     cwd: str | None = None
     env: dict[str, str] = {}
+    arg_style: Literal["positional", "flags"] = "positional"
 
     def model_post_init(self, __context):
         if not self.id:
