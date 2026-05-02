@@ -5,6 +5,7 @@ from textual.containers import Vertical, VerticalScroll, Horizontal
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, RichLog, Select, TextArea
+from pydantic import ValidationError
 
 from scriptpilot.models import Script, ScriptArg
 from scriptpilot.widgets.arg_editor import ArgEditor
@@ -124,7 +125,10 @@ class EditScreen(ModalScreen[Script | None]):
                     placeholder="~ (default: home)",
                     id="cwd-input",
                 )
-                yield ArgEditor(s.args if s else [])
+                yield ArgEditor(
+                    s.args if s else [],
+                    arg_style=s.arg_style if s else "positional",
+                )
                 yield EnvEditor(s.env if s else {})
             with Horizontal(id="button-bar"):
                 yield Button("Run", id="run-btn")
@@ -159,15 +163,22 @@ class EditScreen(ModalScreen[Script | None]):
         script_type = self.query_one("#type-select", Select).value
         content = self.query_one("#content-area", TextArea).text
         timeout_str = self.query_one("#timeout-input", Input).value.strip()
-        args = self.query_one(ArgEditor).get_args()
         cwd_str = self.query_one("#cwd-input", Input).value.strip() or None
         env = self.query_one(EnvEditor).get_env()
+        arg_editor = self.query_one(ArgEditor)
+        arg_style = arg_editor.get_arg_style()
 
         if not name:
             self.notify("Script name is required", severity="error")
             return None
         if not content.strip():
             self.notify("Script content is required", severity="error")
+            return None
+
+        try:
+            args = arg_editor.get_args()
+        except ValidationError as e:
+            self.notify(f"Invalid argument: {e.errors()[0]['msg']}", severity="error")
             return None
 
         try:
@@ -184,6 +195,7 @@ class EditScreen(ModalScreen[Script | None]):
             self._script.args = args
             self._script.cwd = cwd_str
             self._script.env = env
+            self._script.arg_style = arg_style
             return self._script
 
         return Script(
@@ -195,6 +207,7 @@ class EditScreen(ModalScreen[Script | None]):
             args=args,
             cwd=cwd_str,
             env=env,
+            arg_style=arg_style,
         )
 
     def _save(self):
