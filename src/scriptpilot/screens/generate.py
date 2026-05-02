@@ -176,5 +176,6 @@ class GenerateScreen(ModalScreen[Script | None]):
             type=language,
             content=content,
             args=self._result.args if self._result else [],
+            arg_style=self._result.arg_style if self._result else "positional",
         )
         self.dismiss(script)

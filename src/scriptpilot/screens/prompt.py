@@ -150,5 +150,8 @@ class PromptScreen(ModalScreen[Script | None]):
             args=self._result.args,
             timeout=self._script.timeout,
             favorite=self._script.favorite,
+            cwd=self._script.cwd,
+            env=self._script.env,
+            arg_style=self._result.arg_style,
         )
         self.dismiss(updated)
