@@ -3,16 +3,30 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class ScriptArg(BaseModel):
     """A single argument definition for a script."""
 
     name: str
-    type: Literal["string", "boolean", "integer"]
+    type: Literal["string", "boolean", "integer", "path", "choice"]
     required: bool = True
     default: str | bool | int | None = None
+    choices: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _validate_choices(self):
+        if self.type == "choice":
+            if not self.choices:
+                raise ValueError("choice arg requires non-empty choices list")
+            if any(not c.strip() for c in self.choices):
+                raise ValueError("choices must not contain blank entries")
+            if self.default is not None and self.default not in self.choices:
+                raise ValueError(f"default {self.default!r} not in choices")
+        elif self.choices is not None:
+            raise ValueError("choices is only valid when type='choice'")
+        return self
 
 
 class Script(BaseModel):

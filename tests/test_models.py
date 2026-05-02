@@ -25,6 +25,58 @@ class TestScriptArg:
             ScriptArg(name="x", type="float")
 
 
+class TestScriptArgChoices:
+    def test_choice_with_choices_ok(self):
+        arg = ScriptArg(name="env", type="choice", choices=["dev", "staging", "prod"])
+        assert arg.type == "choice"
+        assert arg.choices == ["dev", "staging", "prod"]
+
+    def test_choice_without_choices_rejected(self):
+        with pytest.raises(Exception):
+            ScriptArg(name="env", type="choice")
+
+    def test_choice_empty_list_rejected(self):
+        with pytest.raises(Exception):
+            ScriptArg(name="env", type="choice", choices=[])
+
+    def test_choice_blank_string_in_choices_rejected(self):
+        with pytest.raises(Exception):
+            ScriptArg(name="env", type="choice", choices=["dev", "   "])
+
+    def test_choices_on_non_choice_rejected(self):
+        with pytest.raises(Exception):
+            ScriptArg(name="x", type="string", choices=["a"])
+
+    def test_choice_default_in_choices_ok(self):
+        arg = ScriptArg(
+            name="env", type="choice",
+            choices=["dev", "prod"], default="dev",
+        )
+        assert arg.default == "dev"
+
+    def test_choice_default_not_in_choices_rejected(self):
+        with pytest.raises(Exception):
+            ScriptArg(
+                name="env", type="choice",
+                choices=["dev", "prod"], default="staging",
+            )
+
+    def test_path_type_ok(self):
+        arg = ScriptArg(name="manifest", type="path")
+        assert arg.type == "path"
+        assert arg.choices is None
+
+    def test_path_with_string_default_ok(self):
+        arg = ScriptArg(name="manifest", type="path", default="~/foo.yaml")
+        assert arg.default == "~/foo.yaml"
+
+    def test_backward_compat_no_choices_field(self):
+        """Existing meta files without `choices` load with default None."""
+        data = {"name": "x", "type": "string", "required": True, "default": None}
+        arg = ScriptArg(**data)
+        assert arg.choices is None
+
+
 from scriptpilot.models import Script
 
 
