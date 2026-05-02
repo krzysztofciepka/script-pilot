@@ -13,11 +13,21 @@ BASE_URL = "https://openrouter.ai/api/v1"
 GENERATE_SYSTEM_PROMPT = (
     "You are a script generator. You MUST output exactly two fenced blocks:\n\n"
     "1. A code block with the script (use ```bash, ```python, or ```javascript as the fence label)\n"
-    "2. A JSON block with argument definitions\n\n"
+    "2. A JSON block with argument definitions and arg_style\n\n"
     "The code must be complete, valid, and ready to run. Include brief comments where helpful.\n\n"
     "The JSON block must have this exact format:\n"
-    '```json\n{"args": [{"name": "arg_name", "type": "string|integer|boolean", "required": true|false, "default": "value"}]}\n```\n\n'
-    "Use an empty args array if the script takes no arguments.\n"
+    "```json\n"
+    '{"args": [{"name": "arg_name", '
+    '"type": "string|integer|boolean|path|choice", '
+    '"required": true|false, "default": "value", '
+    '"choices": ["a", "b"]}], '
+    '"arg_style": "positional|flags"}\n'
+    "```\n\n"
+    "Rules:\n"
+    "- Use an empty args array if the script takes no arguments.\n"
+    "- `choices` is required iff `type == \"choice\"` and must be a non-empty list of strings; omit otherwise.\n"
+    "- `path` args receive an absolute path (relatives are resolved by ScriptPilot against the script's cwd); your script can treat them as ready-to-use file paths.\n"
+    "- When `arg_style` is `flags`, your script MUST parse arguments as `--name value` (and `--name` for booleans). When `arg_style` is `positional`, parse as `$1 $2 ...`. Pick whichever style is idiomatic for the language and the script's purpose.\n"
     "Do NOT include any text outside these two blocks."
 )
 
@@ -27,10 +37,20 @@ MODIFY_SYSTEM_PROMPT = (
     "describing what to change. Output the COMPLETE updated script (not a diff). "
     "You MUST output exactly two fenced blocks:\n\n"
     "1. A code block with the full updated script (use ```bash, ```python, or ```javascript)\n"
-    "2. A JSON block with argument definitions for the updated script\n\n"
+    "2. A JSON block with argument definitions and arg_style for the updated script\n\n"
     "The JSON block must have this exact format:\n"
-    '```json\n{"args": [{"name": "arg_name", "type": "string|integer|boolean", "required": true|false, "default": "value"}]}\n```\n\n'
-    "Use an empty args array if the script takes no arguments.\n"
+    "```json\n"
+    '{"args": [{"name": "arg_name", '
+    '"type": "string|integer|boolean|path|choice", '
+    '"required": true|false, "default": "value", '
+    '"choices": ["a", "b"]}], '
+    '"arg_style": "positional|flags"}\n'
+    "```\n\n"
+    "Rules:\n"
+    "- Use an empty args array if the script takes no arguments.\n"
+    "- `choices` is required iff `type == \"choice\"` and must be a non-empty list of strings; omit otherwise.\n"
+    "- `path` args receive an absolute path (relatives are resolved by ScriptPilot against the script's cwd); your script can treat them as ready-to-use file paths.\n"
+    "- When `arg_style` is `flags`, your script MUST parse arguments as `--name value` (and `--name` for booleans). When `arg_style` is `positional`, parse as `$1 $2 ...`. Pick whichever style is idiomatic for the language and the script's purpose.\n"
     "Do NOT include any text outside these two blocks."
 )
 
@@ -53,26 +73,27 @@ class MalformedResponseError(Exception):
 
 @dataclass
 class GenerationResult:
-    """Parsed LLM response containing code and argument definitions."""
+    """Parsed LLM response containing code, argument definitions, and arg_style."""
     code: str
     args: list[ScriptArg]
+    arg_style: str = "positional"
 
 
 def parse_generation_response(text: str) -> GenerationResult:
-    """Parse an LLM response into code and argument definitions."""
+    """Parse an LLM response into code, argument definitions, and arg_style."""
     blocks = re.findall(r"```(\w*)\n(.*?)```", text, re.DOTALL)
     if not blocks:
         raise MalformedResponseError("No fenced code blocks found")
 
     code = None
-    args_data = None
+    parsed = None
 
     for lang, content in blocks:
         if lang == "json":
             try:
-                parsed = _json.loads(content.strip())
-                if isinstance(parsed, dict) and "args" in parsed:
-                    args_data = parsed["args"]
+                obj = _json.loads(content.strip())
+                if isinstance(obj, dict) and "args" in obj:
+                    parsed = obj
             except _json.JSONDecodeError:
                 raise MalformedResponseError("Invalid JSON in args block")
         elif code is None:
@@ -80,15 +101,21 @@ def parse_generation_response(text: str) -> GenerationResult:
 
     if code is None:
         raise MalformedResponseError("No code block found")
-    if args_data is None:
+    if parsed is None:
         raise MalformedResponseError("No JSON block with 'args' key found")
 
     try:
-        args = [ScriptArg(**a) for a in args_data]
+        args = [ScriptArg(**a) for a in parsed["args"]]
     except Exception as e:
         raise MalformedResponseError(f"Invalid arg definition: {e}") from e
 
-    return GenerationResult(code=code, args=args)
+    arg_style = parsed.get("arg_style", "positional")
+    if arg_style not in ("positional", "flags"):
+        raise MalformedResponseError(
+            f"Invalid arg_style {arg_style!r} (must be 'positional' or 'flags')"
+        )
+
+    return GenerationResult(code=code, args=args, arg_style=arg_style)
 
 
 def strip_markdown_fences(text: str) -> str:

@@ -318,3 +318,64 @@ class TestModifyScript:
         )
         with pytest.raises(AuthenticationError):
             await client.modify_script("x", "y", "bash", "openai/gpt-4o")
+
+
+class TestParseArgStyle:
+    def test_arg_style_present(self):
+        text = (
+            '```bash\necho hi\n```\n\n'
+            '```json\n{"args": [], "arg_style": "flags"}\n```'
+        )
+        result = parse_generation_response(text)
+        assert result.arg_style == "flags"
+
+    def test_arg_style_missing_defaults_positional(self):
+        text = (
+            '```bash\necho hi\n```\n\n'
+            '```json\n{"args": []}\n```'
+        )
+        result = parse_generation_response(text)
+        assert result.arg_style == "positional"
+
+    def test_arg_style_invalid_raises(self):
+        text = (
+            '```bash\necho hi\n```\n\n'
+            '```json\n{"args": [], "arg_style": "kwargs"}\n```'
+        )
+        with pytest.raises(MalformedResponseError):
+            parse_generation_response(text)
+
+
+class TestParseChoiceArg:
+    def test_choice_with_choices(self):
+        text = (
+            '```bash\necho $1\n```\n\n'
+            '```json\n{"args": ['
+            '{"name": "env", "type": "choice", "required": true, '
+            '"choices": ["dev", "prod"]}'
+            ']}\n```'
+        )
+        result = parse_generation_response(text)
+        assert result.args[0].type == "choice"
+        assert result.args[0].choices == ["dev", "prod"]
+
+    def test_choice_missing_choices_raises(self):
+        text = (
+            '```bash\necho $1\n```\n\n'
+            '```json\n{"args": ['
+            '{"name": "env", "type": "choice", "required": true}'
+            ']}\n```'
+        )
+        with pytest.raises(MalformedResponseError):
+            parse_generation_response(text)
+
+    def test_path_arg(self):
+        text = (
+            '```bash\ncat $1\n```\n\n'
+            '```json\n{"args": ['
+            '{"name": "p", "type": "path", "required": true}'
+            ']}\n```'
+        )
+        result = parse_generation_response(text)
+        assert result.args[0].type == "path"
+        assert result.args[0].choices is None
