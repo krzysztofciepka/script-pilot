@@ -3,8 +3,9 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Switch
+from textual.widgets import Button, Input, Label, Select, Switch
 
+from scriptpilot.argv import ArgValidationError, build_argv, validate_and_coerce
 from scriptpilot.models import Script, ScriptArg
 
 
@@ -51,6 +52,11 @@ class RunScreen(ModalScreen[list[str] | None]):
         with Vertical(id="run-container"):
             yield Label(f"[bold]Run: {self._script.name}[/bold]")
             yield Label("")
+            if any(a.type == "path" for a in self._script.args):
+                yield Label(
+                    "[dim]relative paths resolve against cwd[/dim]",
+                    id="path-hint",
+                )
             for i, arg in enumerate(self._script.args):
                 req = "*" if arg.required else ""
                 with Horizontal(classes="arg-row"):
@@ -58,11 +64,26 @@ class RunScreen(ModalScreen[list[str] | None]):
                     if arg.type == "boolean":
                         default_val = bool(arg.default) if arg.default is not None else False
                         yield Switch(value=default_val, id=f"arg-{i}")
+                    elif arg.type == "choice":
+                        options = [(c, c) for c in (arg.choices or [])]
+                        if arg.default is not None:
+                            initial = arg.default
+                        elif arg.required and arg.choices:
+                            initial = arg.choices[0]
+                        else:
+                            initial = Select.BLANK
+                        yield Select(
+                            options,
+                            value=initial,
+                            allow_blank=not arg.required,
+                            id=f"arg-{i}",
+                        )
                     else:
                         default_str = str(arg.default) if arg.default is not None else ""
+                        placeholder = "path" if arg.type == "path" else arg.type
                         yield Input(
                             value=default_str,
-                            placeholder=f"{arg.type}",
+                            placeholder=placeholder,
                             id=f"arg-{i}",
                         )
             with Horizontal(id="button-bar"):
@@ -76,17 +97,27 @@ class RunScreen(ModalScreen[list[str] | None]):
             self._collect_and_run()
 
     def _collect_and_run(self):
-        values = []
+        raw_values: list[str | bool] = []
         for i, arg in enumerate(self._script.args):
             widget_id = f"arg-{i}"
             if arg.type == "boolean":
-                switch = self.query_one(f"#{widget_id}", Switch)
-                values.append("true" if switch.value else "false")
+                raw_values.append(self.query_one(f"#{widget_id}", Switch).value)
+            elif arg.type == "choice":
+                v = self.query_one(f"#{widget_id}", Select).value
+                raw_values.append("" if v is Select.BLANK else v)
             else:
-                inp = self.query_one(f"#{widget_id}", Input)
-                val = inp.value.strip()
-                if arg.required and not val:
-                    self.notify(f"Argument '{arg.name}' is required", severity="error")
-                    return
-                values.append(val)
-        self.dismiss(values)
+                raw_values.append(
+                    self.query_one(f"#{widget_id}", Input).value.strip()
+                )
+
+        validated: list[str | bool] = []
+        for i, (arg, raw) in enumerate(zip(self._script.args, raw_values)):
+            try:
+                validated.append(validate_and_coerce(arg, raw))
+            except ArgValidationError as e:
+                self.notify(e.message, severity="error")
+                self.query_one(f"#arg-{i}").focus()
+                return
+
+        argv = build_argv(self._script, validated)
+        self.dismiss(argv)
