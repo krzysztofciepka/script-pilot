@@ -7,10 +7,11 @@ import shutil
 import signal
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
-from scriptpilot.models import Script
+from scriptpilot.models import OutputLine, Script
 from scriptpilot.secrets import load_secrets
 
 INTERPRETERS = {
@@ -53,14 +54,7 @@ def _resolve_cwd(script_cwd: str | None) -> Path:
 
 
 def _resolve_command(script_type: str, python_command: str) -> list[str]:
-    """Return the argv prefix (interpreter + flags) for a script type.
-
-    For ``python``, ``python_command`` is shlex-split and the first token is
-    looked up on PATH. Empty / whitespace-only ``python_command`` falls back
-    to ``python3`` — a safety net for direct callers (tests, scripts) so they
-    don't need ``uv`` installed. The production flow always passes the
-    resolved ``AppConfig.python_command`` through.
-    """
+    """Return the argv prefix (interpreter + flags) for a script type."""
     if script_type == "python":
         cmd = python_command.strip() or "python3"
         parts = shlex.split(cmd)
@@ -72,10 +66,15 @@ def _resolve_command(script_type: str, python_command: str) -> list[str]:
     return [exe, *parts[1:]]
 
 
+def _ts_dir() -> str:
+    """Filesystem-safe UTC timestamp for SCRIPTPILOT_OUTPUT_DIR (no colons)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+
+
 async def execute_script(
     script: Script,
     arg_values: list[str] | None = None,
-    on_output: Callable[[str], None] | None = None,
+    on_output: Callable[[OutputLine], None] | None = None,
     *,
     script_path: Path,
     python_command: str = "python3",
@@ -84,7 +83,16 @@ async def execute_script(
     cmd_prefix = _resolve_command(script.type, python_command)
     cwd = _resolve_cwd(script.cwd)
     secrets = load_secrets()
-    env = {**os.environ, **secrets, **script.env}
+
+    output_dir = (
+        Path.home() / ".scriptpilot" / "outputs" / script.id / _ts_dir()
+    )
+    env = {
+        **os.environ,
+        **secrets,
+        "SCRIPTPILOT_OUTPUT_DIR": str(output_dir),
+        **script.env,
+    }
 
     cmd = [*cmd_prefix, str(script_path)]
     if arg_values:
@@ -94,7 +102,7 @@ async def execute_script(
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        stderr=asyncio.subprocess.PIPE,
         cwd=str(cwd),
         env=env,
         start_new_session=True,
@@ -102,33 +110,33 @@ async def execute_script(
 
     timed_out = False
 
-    async def _read_output():
-        assert proc.stdout is not None
+    async def _read(stream, label: Literal["stdout", "stderr"]):
+        if stream is None:
+            return
         while True:
-            line = await proc.stdout.readline()
-            if not line:
+            raw = await stream.readline()
+            if not raw:
                 break
-            text = line.decode(errors="replace").rstrip("\n")
+            text = raw.decode(errors="replace").rstrip("\n")
             if on_output:
-                on_output(text)
+                on_output(OutputLine(label, text))
 
-    read_task = asyncio.create_task(_read_output())
+    read_tasks = [
+        asyncio.create_task(_read(proc.stdout, "stdout")),
+        asyncio.create_task(_read(proc.stderr, "stderr")),
+    ]
 
     try:
         await asyncio.wait_for(proc.wait(), timeout=script.timeout)
     except asyncio.TimeoutError:
         timed_out = True
-        # Kill the entire process group so child processes (e.g. sleep)
-        # also die and release the pipe.
         try:
             os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
         await proc.wait()
 
-    # Once the process group is dead, stdout closes and readline
-    # returns b"", so read_task will finish promptly.
-    await read_task
+    await asyncio.gather(*read_tasks)
 
     duration = time.monotonic() - start
     return ExecutionResult(

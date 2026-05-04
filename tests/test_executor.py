@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 
 from scriptpilot.executor import execute_script, ExecutionResult, InterpreterNotFoundError
-from scriptpilot.models import Script, ScriptArg
+from scriptpilot.models import OutputLine, Script, ScriptArg
 from scriptpilot.paths import EXTENSIONS
 
 
@@ -33,7 +33,7 @@ class TestExecutor:
         assert result.exit_code == 0
         assert not result.timed_out
         assert result.duration >= 0
-        assert any("hello world" in line for line in lines)
+        assert any("hello world" in ol.line for ol in lines)
 
     @pytest.mark.asyncio
     async def test_run_python_script(self, tmp_path):
@@ -47,7 +47,7 @@ class TestExecutor:
         lines = []
         result = await execute_script(script, on_output=lines.append, script_path=path)
         assert result.exit_code == 0
-        assert any("from python" in line for line in lines)
+        assert any("from python" in ol.line for ol in lines)
 
     @pytest.mark.asyncio
     async def test_script_with_args(self, tmp_path):
@@ -70,7 +70,7 @@ class TestExecutor:
             script_path=path,
         )
         assert result.exit_code == 0
-        assert any("arg1=hello arg2=world" in line for line in lines)
+        assert any("arg1=hello arg2=world" in ol.line for ol in lines)
 
     @pytest.mark.asyncio
     async def test_script_nonzero_exit(self, tmp_path):
@@ -109,7 +109,7 @@ class TestExecutor:
         lines = []
         result = await execute_script(script, on_output=lines.append, script_path=path)
         assert result.exit_code == 0
-        assert any("err msg" in line for line in lines)
+        assert any("err msg" in ol.line for ol in lines)
 
     @pytest.mark.asyncio
     async def test_interpreter_present_on_path(self):
@@ -195,7 +195,7 @@ class TestExecuteScriptPythonCommand:
             python_command="python3",
         )
         assert result.exit_code == 0
-        assert any("hi from py" in line for line in lines)
+        assert any("hi from py" in ol.line for ol in lines)
 
     @pytest.mark.asyncio
     async def test_python_command_unknown_raises(self, tmp_path):
@@ -263,7 +263,7 @@ class TestExecuteScriptCwd:
         )
         assert result.exit_code == 0
         # Resolve to handle macOS /private/var symlink quirks.
-        assert any(str(tmp_path.resolve()) in line for line in lines)
+        assert any(str(tmp_path.resolve()) in ol.line for ol in lines)
 
     @pytest.mark.asyncio
     async def test_cwd_default_is_home(self, tmp_path):
@@ -279,7 +279,7 @@ class TestExecuteScriptCwd:
             script, on_output=lines.append, script_path=path,
         )
         assert result.exit_code == 0
-        assert any(str(Path.home()) in line for line in lines)
+        assert any(str(Path.home()) in ol.line for ol in lines)
 
     @pytest.mark.asyncio
     async def test_cwd_missing_raises(self, tmp_path):
@@ -312,7 +312,7 @@ class TestExecuteScriptEnv:
             script, on_output=lines.append, script_path=path,
         )
         assert result.exit_code == 0
-        assert any("FOO=bar" in line for line in lines)
+        assert any("FOO=bar" in ol.line for ol in lines)
 
     @pytest.mark.asyncio
     async def test_secrets_loaded_into_env(self, tmp_path, monkeypatch):
@@ -333,7 +333,7 @@ class TestExecuteScriptEnv:
             script, on_output=lines.append, script_path=path,
         )
         assert result.exit_code == 0
-        assert any("JIRA_TOKEN=secret123" in line for line in lines)
+        assert any("JIRA_TOKEN=secret123" in ol.line for ol in lines)
 
     @pytest.mark.asyncio
     async def test_env_precedence_script_overrides_secrets_overrides_os(
@@ -360,6 +360,77 @@ class TestExecuteScriptEnv:
             script, on_output=lines.append, script_path=path,
         )
         assert result.exit_code == 0
-        assert any("X=from_script" in line for line in lines)
-        assert any("Y=y_from_secrets" in line for line in lines)
-        assert any("Z=z_secret" in line for line in lines)
+        assert any("X=from_script" in ol.line for ol in lines)
+        assert any("Y=y_from_secrets" in ol.line for ol in lines)
+        assert any("Z=z_secret" in ol.line for ol in lines)
+
+
+class TestExecutorStderrSplit:
+    @pytest.mark.asyncio
+    async def test_stdout_and_stderr_tagged_separately(self, tmp_path):
+        script = Script(
+            name="split",
+            description="emits to both",
+            type="bash",
+            content='echo out1; echo err1 1>&2; echo out2',
+        )
+        path = _materialize(script, tmp_path)
+        lines: list[OutputLine] = []
+        result = await execute_script(script, on_output=lines.append, script_path=path)
+        assert result.exit_code == 0
+        assert all(isinstance(ol, OutputLine) for ol in lines)
+        stdout_lines = [ol.line for ol in lines if ol.stream == "stdout"]
+        stderr_lines = [ol.line for ol in lines if ol.stream == "stderr"]
+        assert "out1" in stdout_lines
+        assert "out2" in stdout_lines
+        assert "err1" in stderr_lines
+
+    @pytest.mark.asyncio
+    async def test_only_stderr_does_not_block(self, tmp_path):
+        script = Script(
+            name="stderr only",
+            description="prints to stderr",
+            type="bash",
+            content='echo only-err 1>&2',
+        )
+        path = _materialize(script, tmp_path)
+        lines: list[OutputLine] = []
+        result = await execute_script(script, on_output=lines.append, script_path=path)
+        assert result.exit_code == 0
+        assert any(ol.stream == "stderr" and "only-err" in ol.line for ol in lines)
+
+
+class TestExecutorOutputDir:
+    @pytest.mark.asyncio
+    async def test_env_var_set_and_dir_not_created(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        script = Script(
+            name="env probe",
+            description="prints SCRIPTPILOT_OUTPUT_DIR",
+            type="bash",
+            content='echo "$SCRIPTPILOT_OUTPUT_DIR"',
+        )
+        path = _materialize(script, tmp_path)
+        lines: list[OutputLine] = []
+        result = await execute_script(script, on_output=lines.append, script_path=path)
+        assert result.exit_code == 0
+        emitted = next(ol.line for ol in lines if ol.stream == "stdout")
+        expected_prefix = str(tmp_path / ".scriptpilot" / "outputs" / script.id)
+        assert emitted.startswith(expected_prefix)
+        assert not Path(emitted).exists()
+
+    @pytest.mark.asyncio
+    async def test_per_script_env_overrides(self, tmp_path):
+        script = Script(
+            name="env override",
+            description="checks override",
+            type="bash",
+            content='echo "$SCRIPTPILOT_OUTPUT_DIR"',
+            env={"SCRIPTPILOT_OUTPUT_DIR": "/tmp/custom-output"},
+        )
+        path = _materialize(script, tmp_path)
+        lines: list[OutputLine] = []
+        result = await execute_script(script, on_output=lines.append, script_path=path)
+        assert result.exit_code == 0
+        emitted = next(ol.line for ol in lines if ol.stream == "stdout")
+        assert emitted == "/tmp/custom-output"
