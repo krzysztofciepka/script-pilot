@@ -5,7 +5,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Footer, Header, Label
 
-from scriptpilot.models import Script, ScriptArg, RunRecord
+from scriptpilot.models import OutputLine, RunRecord, Script, ScriptArg
 from scriptpilot.storage import ScriptStore
 from scriptpilot.history import HistoryStore
 from scriptpilot.executor import execute_script, InterpreterNotFoundError, ScriptCwdError
@@ -57,7 +57,10 @@ class MainScreen(Screen):
     def on_script_selected(self, event: ScriptSelected):
         self._selected_script = event.script
         last_run = self._get_last_run(event.script.id)
-        self.query_one(MainPanel).show_script_details(event.script, last_run)
+        panel = self.query_one(MainPanel)
+        panel.show_script_details(event.script, last_run)
+        if last_run:
+            panel.show_finished_run(last_run)
 
     def action_new_script(self):
         def on_result(script: Script | None):
@@ -214,7 +217,10 @@ class MainScreen(Screen):
         panel.show_running(script)
 
         async def run():
-            def collect_output(line: str):
+            collected: list[OutputLine] = []
+
+            def collect_output(line: OutputLine):
+                collected.append(line)
                 panel.append_output(line)
 
             try:
@@ -225,7 +231,6 @@ class MainScreen(Screen):
                     script_path=self._store.path_for(script.id),
                     python_command=self.app._config.python_command,
                 )
-                panel.show_finished(result.exit_code, result.duration, result.timed_out)
 
                 from datetime import datetime, timezone
                 record = RunRecord(
@@ -235,9 +240,10 @@ class MainScreen(Screen):
                     exit_code=result.exit_code,
                     timed_out=result.timed_out,
                     duration=result.duration,
-                    lines=[],  # populated in Task 8
+                    lines=collected,
                 )
                 self._history.add(record)
+                panel.show_finished_run(record)
             except (InterpreterNotFoundError, ScriptCwdError) as e:
                 panel.show_error(str(e))
                 self.notify(str(e), severity="error")
