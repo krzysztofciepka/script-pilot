@@ -1,10 +1,47 @@
 from __future__ import annotations
 
+import json
+import re
+
 from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Label, RichLog, Static
 
 from scriptpilot.models import Script, RunRecord
+
+
+def _try_parse_json(stdout: str) -> object | None:
+    """Try to parse stdout as JSON.
+
+    First attempt: the whole string (handles pretty-printed multi-line).
+    Second attempt: the last non-empty line (handles status-line-then-JSON).
+    Returns the parsed value or None.
+    """
+    if not stdout.strip():
+        return None
+    candidates = [stdout]
+    last = _last_nonempty_line(stdout)
+    if last and last != stdout:
+        candidates.append(last)
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _last_nonempty_line(text: str) -> str:
+    for line in reversed(text.splitlines()):
+        if line.strip():
+            return line
+    return ""
+
+
+def _safe_name(name: str) -> str:
+    """Filesystem-safe filename stem; falls back to 'output' if empty."""
+    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "-", name).strip("-")
+    return cleaned or "output"
 
 
 class MainPanel(Widget):
