@@ -75,7 +75,11 @@ class RunRecord(BaseModel):
 
 ### `src/scriptpilot/executor.py` — separate stderr, set env var
 
+`OutputLine` is imported from `scriptpilot.models`, not redefined here.
+
 ```python
+from scriptpilot.models import OutputLine
+
 async def execute_script(
     script: Script,
     arg_values: list[str] | None = None,
