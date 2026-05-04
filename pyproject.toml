@@ -9,6 +9,9 @@ dependencies = [
     "pydantic>=2.0",
 ]
 
+[project.optional-dependencies]
+clipboard = ["pyperclip>=1.8"]
+
 [project.scripts]
 scriptpilot = "scriptpilot.app:main"
 
