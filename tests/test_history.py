@@ -2,7 +2,7 @@ import json
 import pytest
 from pathlib import Path
 
-from scriptpilot.models import RunRecord
+from scriptpilot.models import OutputLine, RunRecord
 from scriptpilot.history import HistoryStore
 
 
@@ -20,7 +20,7 @@ def sample_record():
         exit_code=0,
         timed_out=False,
         duration=1.5,
-        output="hello world\n",
+        lines=[OutputLine("stdout", "hello world")],
     )
 
 
@@ -33,18 +33,20 @@ class TestHistoryStore:
         records = store.list_all()
         assert len(records) == 1
         assert records[0].script_id == "abc"
-        assert records[0].output == "hello world\n"
+        assert records[0].lines == [OutputLine("stdout", "hello world")]
 
     def test_list_all_newest_first(self, store):
         r1 = RunRecord(
             script_id="a", script_name="a",
             timestamp="2026-04-15T10:00:00",
-            exit_code=0, timed_out=False, duration=1.0, output="first\n",
+            exit_code=0, timed_out=False, duration=1.0,
+            lines=[OutputLine("stdout", "first")],
         )
         r2 = RunRecord(
             script_id="a", script_name="a",
             timestamp="2026-04-15T11:00:00",
-            exit_code=0, timed_out=False, duration=1.0, output="second\n",
+            exit_code=0, timed_out=False, duration=1.0,
+            lines=[OutputLine("stdout", "second")],
         )
         store.add(r1)
         store.add(r2)
@@ -56,12 +58,14 @@ class TestHistoryStore:
         r1 = RunRecord(
             script_id="a", script_name="script a",
             timestamp="2026-04-15T10:00:00",
-            exit_code=0, timed_out=False, duration=1.0, output="a\n",
+            exit_code=0, timed_out=False, duration=1.0,
+            lines=[OutputLine("stdout", "a")],
         )
         r2 = RunRecord(
             script_id="b", script_name="script b",
             timestamp="2026-04-15T10:00:00",
-            exit_code=0, timed_out=False, duration=1.0, output="b\n",
+            exit_code=0, timed_out=False, duration=1.0,
+            lines=[OutputLine("stdout", "b")],
         )
         store.add(r1)
         store.add(r2)
@@ -73,7 +77,7 @@ class TestHistoryStore:
         store.add(sample_record)
         store2 = HistoryStore(store._path)
         assert len(store2.list_all()) == 1
-        assert store2.list_all()[0].output == "hello world\n"
+        assert store2.list_all()[0].lines == [OutputLine("stdout", "hello world")]
 
     def test_evicts_oldest_at_cap(self, store):
         for i in range(105):
@@ -81,7 +85,7 @@ class TestHistoryStore:
                 script_id="x", script_name="x",
                 timestamp=f"2026-04-15T{i:05d}",
                 exit_code=0, timed_out=False, duration=1.0,
-                output=f"run {i}\n",
+                lines=[OutputLine("stdout", f"run {i}")],
             )
             store.add(r)
         records = store.list_all()
@@ -96,7 +100,8 @@ class TestHistoryStore:
         r = RunRecord(
             script_id="x", script_name="x",
             timestamp="2026-04-15T10:00:00",
-            exit_code=0, timed_out=False, duration=1.0, output="x\n",
+            exit_code=0, timed_out=False, duration=1.0,
+            lines=[OutputLine("stdout", "x")],
         )
         store.add(r)
         assert path.exists()

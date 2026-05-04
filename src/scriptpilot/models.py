@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from pydantic import BaseModel, model_validator
 
@@ -49,6 +49,13 @@ class Script(BaseModel):
             self.id = str(uuid.uuid4())
 
 
+class OutputLine(NamedTuple):
+    """One line of subprocess output, tagged with its source stream."""
+
+    stream: Literal["stdout", "stderr"]
+    line: str
+
+
 class RunRecord(BaseModel):
     """A single script execution record."""
 
@@ -58,7 +65,15 @@ class RunRecord(BaseModel):
     exit_code: int
     timed_out: bool
     duration: float
-    output: str
+    lines: list[OutputLine] = []
+
+    def combined_text(self) -> str:
+        """All lines in chronological order, no stream marker."""
+        return "\n".join(line for _, line in self.lines)
+
+    def stdout_text(self) -> str:
+        """Stdout-only lines for the JSON viewer's parse attempts."""
+        return "\n".join(line for stream, line in self.lines if stream == "stdout")
 
 
 class AppConfig(BaseModel):

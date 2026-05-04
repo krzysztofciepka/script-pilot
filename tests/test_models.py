@@ -295,7 +295,7 @@ class TestAppConfigAuthoring:
         assert config.theme == "dark"
 
 
-from scriptpilot.models import RunRecord
+from scriptpilot.models import OutputLine, RunRecord
 
 
 class TestRunRecord:
@@ -307,12 +307,12 @@ class TestRunRecord:
             exit_code=0,
             timed_out=False,
             duration=1.5,
-            output="hello world\n",
+            lines=[OutputLine("stdout", "hello world")],
         )
         assert r.script_id == "abc"
         assert r.script_name == "my script"
         assert r.exit_code == 0
-        assert r.output == "hello world\n"
+        assert r.lines == [OutputLine("stdout", "hello world")]
 
     def test_run_record_serialization_roundtrip(self):
         r = RunRecord(
@@ -322,10 +322,77 @@ class TestRunRecord:
             exit_code=1,
             timed_out=True,
             duration=60.0,
-            output="timeout\n",
+            lines=[OutputLine("stderr", "timeout")],
         )
         data = r.model_dump()
         r2 = RunRecord(**data)
         assert r2.exit_code == 1
         assert r2.timed_out is True
-        assert r2.output == "timeout\n"
+        assert r2.lines == [OutputLine("stderr", "timeout")]
+
+
+class TestOutputLine:
+    def test_namedtuple_shape(self):
+        ol = OutputLine("stdout", "hello")
+        assert ol.stream == "stdout"
+        assert ol.line == "hello"
+        assert ol[0] == "stdout"
+        assert ol[1] == "hello"
+
+    def test_stderr_value(self):
+        ol = OutputLine("stderr", "warn")
+        assert ol.stream == "stderr"
+
+
+class TestRunRecordLines:
+    def _record(self, lines):
+        return RunRecord(
+            script_id="x",
+            script_name="x",
+            timestamp="2026-05-04T00:00:00",
+            exit_code=0,
+            timed_out=False,
+            duration=1.0,
+            lines=lines,
+        )
+
+    def test_default_lines_empty(self):
+        r = RunRecord(
+            script_id="x",
+            script_name="x",
+            timestamp="2026-05-04T00:00:00",
+            exit_code=0,
+            timed_out=False,
+            duration=1.0,
+        )
+        assert r.lines == []
+
+    def test_combined_text_chronological(self):
+        r = self._record([
+            OutputLine("stdout", "a"),
+            OutputLine("stderr", "warn"),
+            OutputLine("stdout", "b"),
+        ])
+        assert r.combined_text() == "a\nwarn\nb"
+
+    def test_stdout_text_filters(self):
+        r = self._record([
+            OutputLine("stdout", "a"),
+            OutputLine("stderr", "warn"),
+            OutputLine("stdout", "b"),
+        ])
+        assert r.stdout_text() == "a\nb"
+
+    def test_combined_text_empty(self):
+        r = self._record([])
+        assert r.combined_text() == ""
+
+    def test_round_trip_json(self):
+        r = self._record([
+            OutputLine("stdout", "a"),
+            OutputLine("stderr", "b"),
+        ])
+        dumped = r.model_dump_json()
+        restored = RunRecord.model_validate_json(dumped)
+        assert restored.lines == r.lines
+        assert isinstance(restored.lines[0], OutputLine)

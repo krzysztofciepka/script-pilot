@@ -214,10 +214,7 @@ class MainScreen(Screen):
         panel.show_running(script)
 
         async def run():
-            output_lines: list[str] = []
-
             def collect_output(line: str):
-                output_lines.append(line)
                 panel.append_output(line)
 
             try:
@@ -238,7 +235,7 @@ class MainScreen(Screen):
                     exit_code=result.exit_code,
                     timed_out=result.timed_out,
                     duration=result.duration,
-                    output="\n".join(output_lines),
+                    lines=[],  # populated in Task 8
                 )
                 self._history.add(record)
             except (InterpreterNotFoundError, ScriptCwdError) as e:
