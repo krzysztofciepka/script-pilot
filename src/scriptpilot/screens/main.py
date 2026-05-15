@@ -209,6 +209,8 @@ class MainScreen(Screen):
             favorite=not script.favorite,
             cwd=script.cwd,
             env=script.env,
+            tags=list(script.tags),
+            arg_style=script.arg_style,
         )
         self._store.update(updated)
         self._selected_script = updated
