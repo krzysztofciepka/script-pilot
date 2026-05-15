@@ -174,7 +174,11 @@ class MainPanel(Widget):
         log.display = True
 
         status = self.query_one("#status-bar", Static)
-        if run.timed_out:
+        if run.cancelled:
+            status.update(
+                f"[yellow]Cancelled by user[/yellow]  Duration: {run.duration:.1f}s"
+            )
+        elif run.timed_out:
             status.update(f"[red]Timed out after {run.duration:.1f}s[/red]")
         elif run.exit_code == 0:
             status.update(

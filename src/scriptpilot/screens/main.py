@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
@@ -29,6 +31,7 @@ class MainScreen(Screen):
         ("p", "prompt_script", "Prompt"),
         ("c", "clone_script", "Clone"),
         ("f", "toggle_favorite", "Fav"),
+        ("s", "cancel_script", "Cancel"),
     ]
 
     DEFAULT_CSS = """
@@ -42,6 +45,7 @@ class MainScreen(Screen):
         self._store = store
         self._history = history
         self._selected_script: Script | None = None
+        self._cancel_event: asyncio.Event | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -212,9 +216,18 @@ class MainScreen(Screen):
         label = "Favorited" if updated.favorite else "Unfavorited"
         self.notify(f"{label} '{updated.name}'")
 
+    def action_cancel_script(self):
+        if self._cancel_event is None:
+            self.notify("Nothing running", severity="warning")
+            return
+        self._cancel_event.set()
+
     def _execute(self, script: Script, arg_values: list[str] | None = None):
         panel = self.query_one(MainPanel)
         panel.show_running(script)
+
+        cancel_event = asyncio.Event()
+        self._cancel_event = cancel_event
 
         async def run():
             collected: list[OutputLine] = []
@@ -230,6 +243,7 @@ class MainScreen(Screen):
                     on_output=collect_output,
                     script_path=self._store.path_for(script.id),
                     python_command=self.app._config.python_command,
+                    cancel_event=cancel_event,
                 )
 
                 from datetime import datetime, timezone
@@ -239,6 +253,7 @@ class MainScreen(Screen):
                     timestamp=datetime.now(timezone.utc).isoformat(),
                     exit_code=result.exit_code,
                     timed_out=result.timed_out,
+                    cancelled=result.cancelled,
                     duration=result.duration,
                     lines=collected,
                 )
@@ -250,6 +265,9 @@ class MainScreen(Screen):
             except Exception as e:
                 panel.show_error(f"Error: {e}")
                 self.notify(str(e), severity="error")
+            finally:
+                if self._cancel_event is cancel_event:
+                    self._cancel_event = None
 
         self.run_worker(run(), name="execute", exclusive=True)
 
