@@ -34,6 +34,7 @@ class ExecutionResult:
     exit_code: int
     timed_out: bool
     duration: float
+    cancelled: bool = False
 
 
 def _resolve_cwd(script_cwd: str | None) -> Path:
@@ -78,6 +79,7 @@ async def execute_script(
     *,
     script_path: Path,
     python_command: str = "python3",
+    cancel_event: asyncio.Event | None = None,
 ) -> ExecutionResult:
     """Execute a script (read from ``script_path``) and stream output."""
     cmd_prefix = _resolve_command(script.type, python_command)
@@ -109,6 +111,7 @@ async def execute_script(
     )
 
     timed_out = False
+    cancelled = False
 
     async def _read(stream, label: Literal["stdout", "stderr"]):
         if stream is None:
@@ -126,10 +129,27 @@ async def execute_script(
         asyncio.create_task(_read(proc.stderr, "stderr")),
     ]
 
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=script.timeout)
-    except asyncio.TimeoutError:
-        timed_out = True
+    if cancel_event is None:
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=script.timeout)
+        except asyncio.TimeoutError:
+            timed_out = True
+    else:
+        wait_task = asyncio.create_task(proc.wait())
+        cancel_task = asyncio.create_task(cancel_event.wait())
+        done, pending = await asyncio.wait(
+            [wait_task, cancel_task],
+            timeout=script.timeout,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for t in pending:
+            t.cancel()
+        if not done:
+            timed_out = True
+        elif cancel_task in done and cancel_event.is_set():
+            cancelled = True
+
+    if timed_out or cancelled:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
@@ -142,5 +162,6 @@ async def execute_script(
     return ExecutionResult(
         exit_code=proc.returncode if proc.returncode is not None else -1,
         timed_out=timed_out,
+        cancelled=cancelled,
         duration=duration,
     )

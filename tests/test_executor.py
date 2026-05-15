@@ -434,3 +434,53 @@ class TestExecutorOutputDir:
         assert result.exit_code == 0
         emitted = next(ol.line for ol in lines if ol.stream == "stdout")
         assert emitted == "/tmp/custom-output"
+
+
+import asyncio
+
+
+@pytest.fixture
+def long_sleep_script(tmp_path):
+    script = Script(
+        name="sleep",
+        description="sleeps 30s",
+        type="bash",
+        content="sleep 30",
+        timeout=10,
+    )
+    return script, _materialize(script, tmp_path)
+
+
+class TestExecutorCancel:
+    @pytest.mark.asyncio
+    async def test_cancel_event_kills_process(self, long_sleep_script):
+        script, path = long_sleep_script
+        event = asyncio.Event()
+
+        async def fire_cancel():
+            await asyncio.sleep(0.1)
+            event.set()
+
+        task = asyncio.create_task(fire_cancel())
+        result = await execute_script(script, script_path=path, cancel_event=event)
+        await task
+
+        assert result.cancelled is True
+        assert result.timed_out is False
+        assert result.exit_code != 0
+        assert result.duration < 5  # well under the 10s timeout
+
+    @pytest.mark.asyncio
+    async def test_no_cancel_event_runs_normally(self, bash_script):
+        script, path = bash_script
+        result = await execute_script(script, script_path=path)
+        assert result.cancelled is False
+        assert result.exit_code == 0
+
+    @pytest.mark.asyncio
+    async def test_unfired_cancel_event_runs_normally(self, bash_script):
+        script, path = bash_script
+        event = asyncio.Event()
+        result = await execute_script(script, script_path=path, cancel_event=event)
+        assert result.cancelled is False
+        assert result.exit_code == 0
