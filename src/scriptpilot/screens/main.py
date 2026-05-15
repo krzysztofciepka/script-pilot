@@ -32,7 +32,7 @@ class MainScreen(Screen):
         ("p", "prompt_script", "Prompt"),
         ("c", "clone_script", "Clone"),
         ("f", "toggle_favorite", "Fav"),
-        ("s", "cancel_script", "Cancel"),
+        ("k", "cancel_script", "Cancel"),
         ("slash", "focus_filter", "Filter"),
         ("H", "show_history", "History"),
     ]
