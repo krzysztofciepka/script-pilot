@@ -146,7 +146,7 @@ async def execute_script(
             t.cancel()
         if not done:
             timed_out = True
-        elif cancel_task in done and cancel_event.is_set():
+        elif cancel_task in done and wait_task not in done:
             cancelled = True
 
     if timed_out or cancelled:
