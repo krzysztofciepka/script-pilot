@@ -112,3 +112,55 @@ class TestHistoryStore:
         store = HistoryStore(path)
         assert store.list_all() == []
         assert (tmp_path / "history.json.bak").exists()
+
+
+from scriptpilot.history import format_history_row
+
+
+class TestFormatHistoryRow:
+    def _record(self, **overrides) -> RunRecord:
+        defaults = dict(
+            script_id="a", script_name="csv-importer",
+            timestamp="2026-05-15T14:32:17.123456+00:00",
+            exit_code=0, timed_out=False, duration=1.4,
+            lines=[],
+        )
+        defaults.update(overrides)
+        return RunRecord(**defaults)
+
+    def test_exit_zero(self):
+        row = format_history_row(self._record())
+        assert "2026-05-15 14:32:17" in row
+        assert "csv-importer" in row
+        assert "exit 0" in row
+        assert "1.4s" in row
+
+    def test_exit_nonzero(self):
+        row = format_history_row(self._record(exit_code=2))
+        assert "exit 2" in row
+
+    def test_timed_out(self):
+        row = format_history_row(self._record(timed_out=True, duration=60.0))
+        assert "timed out" in row
+        assert "60.0s" in row
+
+    def test_cancelled(self):
+        row = format_history_row(
+            self._record(cancelled=True, exit_code=-1, duration=3.0)
+        )
+        assert "cancelled" in row
+        assert "3.0s" in row
+
+    def test_long_script_name_truncated(self):
+        row = format_history_row(
+            self._record(script_name="this-is-a-very-long-script-name-x")
+        )
+        # 22-char field, truncated
+        assert "this-is-a-very-long-sc" in row
+        assert "this-is-a-very-long-script-name-x" not in row
+
+    def test_timestamp_without_timezone_suffix(self):
+        row = format_history_row(
+            self._record(timestamp="2026-05-15T09:11:00")
+        )
+        assert "2026-05-15 09:11:00" in row

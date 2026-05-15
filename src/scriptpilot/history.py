@@ -59,3 +59,17 @@ class HistoryStore:
             r for r in reversed(self._records)
             if r.script_id == script_id
         ]
+
+
+def format_history_row(r: RunRecord) -> str:
+    """Render a single RunRecord as a one-line label for the history modal."""
+    ts = r.timestamp.replace("T", " ").split(".")[0].split("+")[0]
+    if r.cancelled:
+        status = "[yellow]cancelled[/yellow]"
+    elif r.timed_out:
+        status = "[red]timed out[/red]"
+    elif r.exit_code == 0:
+        status = "[green]exit 0[/green]"
+    else:
+        status = f"[red]exit {r.exit_code}[/red]"
+    return f"{ts}  {r.script_name:<22.22}  {status}  {r.duration:.1f}s"
