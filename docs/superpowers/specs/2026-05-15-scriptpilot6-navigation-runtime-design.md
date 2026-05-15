@@ -200,6 +200,15 @@ Add `("slash", "focus_filter", "Filter")` to `MainScreen.BINDINGS`. The handler 
 
 When the filter `Input` has focus, slash typed into it is captured as a literal character by Textual's default input handling — no conflict.
 
+### Moving focus from filter to list
+
+After typing a query, the user needs a way to pick an item without losing the filter. Two paths, both implemented:
+
+- **`Down` arrow** while focused on `#filter-input` → focus the `ListView` (which then highlights the first item). Handled via `on_key` on the input: intercept `key.key == "down"`, call `self.query_one(ListView).focus()`, swallow the event.
+- **`Enter`** while focused on `#filter-input` → same as Down (handled via `on_input_submitted`).
+
+`Esc` keeps the spec'd semantics: clear filter + hide input + focus list with the *unfiltered* list shown.
+
 ### Interaction with `update_scripts`
 
 `update_scripts` (called after add/delete/edit/clone/favorite) must respect the current filter. The simplest approach: store the current query on `self._current_query`, and have `update_scripts` re-apply it after refreshing `self._scripts`. This is a one-liner — `_apply_filter(self._current_query)` instead of the existing `lv.clear()` + append loop.
