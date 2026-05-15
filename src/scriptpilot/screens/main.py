@@ -17,6 +17,7 @@ from scriptpilot.widgets.main_panel import MainPanel
 from scriptpilot.screens.edit import EditScreen
 from scriptpilot.screens.run import RunScreen
 from scriptpilot.screens.prompt import PromptScreen
+from scriptpilot.screens.history import HistoryScreen
 
 
 class MainScreen(Screen):
@@ -33,6 +34,7 @@ class MainScreen(Screen):
         ("f", "toggle_favorite", "Fav"),
         ("s", "cancel_script", "Cancel"),
         ("slash", "focus_filter", "Filter"),
+        ("H", "show_history", "History"),
     ]
 
     DEFAULT_CSS = """
@@ -280,6 +282,40 @@ class MainScreen(Screen):
 
     def _refresh_list(self):
         self.query_one(ScriptList).update_scripts(self._store.list())
+
+    def action_show_history(self):
+        records = self._history.list_all()
+        if not records:
+            self.notify("No run history yet", severity="information")
+            return
+
+        def on_pick(record: RunRecord | None):
+            if record is None:
+                return
+            script = self._store.get(record.script_id)
+            panel = self.query_one(MainPanel)
+            if script:
+                self._selected_script = script
+                self._highlight_script(script.id)
+                panel.show_script_details(script, record)
+                panel.show_finished_run(record)
+            else:
+                panel.show_finished_run(record)
+                self.notify(
+                    f"Source script '{record.script_name}' was deleted",
+                    severity="warning",
+                )
+
+        self.app.push_screen(HistoryScreen(records), callback=on_pick)
+
+    def _highlight_script(self, script_id: str):
+        """Move the ScriptList highlight to the script with the given id (if visible)."""
+        from textual.widgets import ListView
+        lv = self.query_one(ScriptList).query_one(ListView)
+        for i, item in enumerate(lv.children):
+            if getattr(item, "name", None) == script_id:
+                lv.index = i
+                return
 
 
 class ConfirmScreen(ModalScreen[bool]):
