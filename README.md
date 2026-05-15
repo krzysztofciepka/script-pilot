@@ -49,6 +49,18 @@ Then run:
 scriptpilot
 ```
 
+## Upgrading
+
+If you're using the prebuilt Linux x86-64 binary from [releases](https://github.com/krzysztofciepka/script-pilot/releases), upgrade in place:
+
+```bash
+scriptpilot --upgrade
+```
+
+This downloads the latest release asset, verifies its sha256 against the GitHub API, and atomically replaces the running binary (with rollback on failure).
+
+For `uv tool` installs, run `uv tool upgrade scriptpilot` instead.
+
 ## AI Generation (Optional)
 
 To use AI-powered script generation, set your [blackbox.ai](https://www.blackbox.ai/) API key — either as an env var or in `~/.scriptpilot/.env`:

@@ -486,7 +486,7 @@ wheels = [
 
 [[package]]
 name = "scriptpilot"
-version = "0.1.0"
+version = "0.0.10"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

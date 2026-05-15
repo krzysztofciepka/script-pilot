@@ -92,6 +92,32 @@ class ScriptPilotApp(App):
         )
 
 
+def _cli_version() -> str:
+    from scriptpilot import __version__
+    return __version__ if __version__.startswith("v") else f"v{__version__}"
+
+
 def main():
+    import sys
+
+    argv = sys.argv[1:]
+    if "--version" in argv or "-V" in argv:
+        print(f"scriptpilot {_cli_version()}")
+        return
+    if "--upgrade" in argv:
+        from scriptpilot.upgrade import GITHUB_API_BASE, run_upgrade
+
+        if not getattr(sys, "frozen", False):
+            sys.stderr.write(
+                "scriptpilot --upgrade only works on the standalone binary.\n"
+                "For pip/uv installs, run: uv tool upgrade scriptpilot\n"
+            )
+            sys.exit(1)
+
+        rc = run_upgrade(
+            sys.stdout, _cli_version(), GITHUB_API_BASE, sys.executable
+        )
+        sys.exit(rc)
+
     app = ScriptPilotApp()
     app.run()
