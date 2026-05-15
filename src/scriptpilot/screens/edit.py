@@ -14,6 +14,7 @@ from scriptpilot.editor import edit_file, EditorError
 from scriptpilot.tempscript import materialize_draft
 from scriptpilot.executor import execute_script, InterpreterNotFoundError, ScriptCwdError
 from scriptpilot.screens.run import RunScreen
+from scriptpilot.tags import normalize_tags
 
 SCRIPT_TYPES = [("Bash", "bash"), ("Python", "python"), ("JavaScript", "js")]
 
@@ -98,6 +99,12 @@ class EditScreen(ModalScreen[Script | None]):
                 yield Input(value=s.name if s else "", id="name-input")
                 yield Label("Description:")
                 yield Input(value=s.description if s else "", id="desc-input")
+                yield Label("Tags (comma-separated):")
+                yield Input(
+                    value=", ".join(s.tags) if s else "",
+                    placeholder="csv, jira, daily",
+                    id="tags-input",
+                )
                 yield Label("Type:")
                 yield Select(
                     SCRIPT_TYPES,
@@ -167,6 +174,8 @@ class EditScreen(ModalScreen[Script | None]):
         env = self.query_one(EnvEditor).get_env()
         arg_editor = self.query_one(ArgEditor)
         arg_style = arg_editor.get_arg_style()
+        tags_raw = self.query_one("#tags-input", Input).value
+        tags = normalize_tags(tags_raw)
 
         if not name:
             self.notify("Script name is required", severity="error")
@@ -196,6 +205,7 @@ class EditScreen(ModalScreen[Script | None]):
             self._script.cwd = cwd_str
             self._script.env = env
             self._script.arg_style = arg_style
+            self._script.tags = tags
             return self._script
 
         return Script(
@@ -208,6 +218,7 @@ class EditScreen(ModalScreen[Script | None]):
             cwd=cwd_str,
             env=env,
             arg_style=arg_style,
+            tags=tags,
         )
 
     def _save(self):

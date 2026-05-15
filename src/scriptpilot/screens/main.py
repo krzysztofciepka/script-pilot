@@ -185,6 +185,7 @@ class MainScreen(Screen):
             favorite=False,
             cwd=original.cwd,
             env=dict(original.env),
+            tags=list(original.tags),
         )
         self._store.add(clone)
         self._refresh_list()

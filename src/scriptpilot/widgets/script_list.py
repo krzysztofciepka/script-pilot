@@ -64,7 +64,10 @@ class ScriptList(Widget):
     @staticmethod
     def _make_label(script: Script) -> str:
         star = " *" if script.favorite else ""
-        return f"[{TYPE_LABELS.get(script.type, '??')}]{star} {script.name}"
+        base = f"[{TYPE_LABELS.get(script.type, '??')}]{star} {script.name}"
+        if script.tags:
+            base += f" [dim]{{{', '.join(script.tags)}}}[/dim]"
+        return base
 
     def _find_script(self, item_name: str) -> Script | None:
         for script in self._scripts:
