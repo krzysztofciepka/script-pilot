@@ -4,6 +4,7 @@ from textual.app import ComposeResult
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import ListItem, ListView, Label
+from rich.markup import escape
 
 from scriptpilot.models import Script
 
@@ -66,7 +67,7 @@ class ScriptList(Widget):
         star = " *" if script.favorite else ""
         base = f"[{TYPE_LABELS.get(script.type, '??')}]{star} {script.name}"
         if script.tags:
-            base += f" [dim]{{{', '.join(script.tags)}}}[/dim]"
+            base += f" [dim]{{{', '.join(escape(t) for t in script.tags)}}}[/dim]"
         return base
 
     def _find_script(self, item_name: str) -> Script | None:
