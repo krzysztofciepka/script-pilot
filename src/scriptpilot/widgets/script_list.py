@@ -11,6 +11,15 @@ from scriptpilot.models import Script
 TYPE_LABELS = {"bash": "SH", "python": "PY", "js": "JS"}
 
 
+def _matches(script: Script, query: str) -> bool:
+    """Case-insensitive substring match across name, description, and tags."""
+    q = query.strip().lower()
+    if not q:
+        return True
+    haystack = " ".join([script.name, script.description, *script.tags]).lower()
+    return q in haystack
+
+
 class ScriptSelected(Message):
     """Posted when a script is highlighted in the list (arrow navigation)."""
 
