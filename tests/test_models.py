@@ -136,7 +136,7 @@ from scriptpilot.models import AppConfig
 class TestAppConfig:
     def test_defaults(self):
         config = AppConfig()
-        assert config.default_model == "openai/gpt-4o"
+        assert config.default_model == "blackboxai/minimax/minimax-m2.5"
 
     def test_custom_model(self):
         config = AppConfig(default_model="anthropic/claude-3.5-sonnet")

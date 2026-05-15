@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json as _json
+import os
 import re
 from dataclasses import dataclass
 
 import httpx
 
 from scriptpilot.models import ScriptArg
+from scriptpilot.secrets import load_secrets
 
-BASE_URL = "https://openrouter.ai/api/v1"
+BASE_URL = "https://api.blackbox.ai/v1"
+API_KEY_ENV = "BLACKBOX_API_KEY"
 
 GENERATE_SYSTEM_PROMPT = (
     "You are a script generator. You MUST output exactly two fenced blocks:\n\n"
@@ -60,11 +63,11 @@ class AuthenticationError(Exception):
 
 
 class RateLimitError(Exception):
-    """Raised when rate limited by OpenRouter."""
+    """Raised when rate limited by Blackbox."""
 
 
-class OpenRouterConnectionError(Exception):
-    """Raised when unable to reach OpenRouter."""
+class BlackboxConnectionError(Exception):
+    """Raised when unable to reach Blackbox."""
 
 
 class MalformedResponseError(Exception):
@@ -77,6 +80,14 @@ class GenerationResult:
     code: str
     args: list[ScriptArg]
     arg_style: str = "positional"
+
+
+def get_api_key() -> str:
+    """Resolve the Blackbox API key from env, falling back to ~/.scriptpilot/.env."""
+    key = os.environ.get(API_KEY_ENV, "").strip()
+    if key:
+        return key
+    return load_secrets().get(API_KEY_ENV, "").strip()
 
 
 def parse_generation_response(text: str) -> GenerationResult:
@@ -127,8 +138,8 @@ def strip_markdown_fences(text: str) -> str:
     return text.strip()
 
 
-class OpenRouterClient:
-    """Async client for the OpenRouter API."""
+class BlackboxClient:
+    """Async client for the blackbox.ai chat completion API."""
 
     def __init__(self, api_key: str):
         self._api_key = api_key
@@ -198,28 +209,14 @@ class OpenRouterClient:
                     timeout=60,
                 )
         except (httpx.ConnectError, httpx.TimeoutException) as e:
-            raise OpenRouterConnectionError(f"Could not reach OpenRouter: {e}") from e
+            raise BlackboxConnectionError(f"Could not reach Blackbox: {e}") from e
 
         if response.status_code == 401:
             raise AuthenticationError("Invalid API key")
         if response.status_code == 429:
-            raise RateLimitError("Rate limited by OpenRouter")
+            raise RateLimitError("Rate limited by Blackbox")
         if response.status_code >= 500:
-            raise OpenRouterConnectionError("OpenRouter server error")
+            raise BlackboxConnectionError("Blackbox server error")
         response.raise_for_status()
 
         return response.json()["choices"][0]["message"]["content"]
-
-    async def list_models(self) -> list[dict]:
-        """Fetch available models from OpenRouter."""
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{BASE_URL}/models",
-                    headers={"Authorization": f"Bearer {self._api_key}"},
-                    timeout=30,
-                )
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
-            raise OpenRouterConnectionError(f"Could not reach OpenRouter: {e}") from e
-        response.raise_for_status()
-        return response.json()["data"]

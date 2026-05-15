@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
 from textual.screen import ModalScreen
@@ -9,11 +7,13 @@ from textual.widgets import Button, Label, TextArea
 from textual.worker import Worker, WorkerState
 
 from scriptpilot.models import Script
-from scriptpilot.openrouter import (
+from scriptpilot.blackbox import (
+    API_KEY_ENV,
     AuthenticationError,
+    BlackboxClient,
     GenerationResult,
-    OpenRouterClient,
     RateLimitError,
+    get_api_key,
 )
 
 TEXTUAL_LANGUAGES = {"bash": "bash", "python": "python", "js": "javascript"}
@@ -52,20 +52,20 @@ class PromptScreen(ModalScreen[Script | None]):
     }
     """
 
-    def __init__(self, script: Script, default_model: str = "openai/gpt-4o"):
+    def __init__(self, script: Script, default_model: str = "blackboxai/minimax/minimax-m2.5"):
         super().__init__()
         self._script = script
         self._model = default_model
         self._result: GenerationResult | None = None
 
     def compose(self) -> ComposeResult:
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        api_key = get_api_key()
         lang = TEXTUAL_LANGUAGES.get(self._script.type, "bash")
         with Vertical(id="prompt-container"):
             yield Label(f"[bold]Modify: {self._script.name}[/bold]")
             if not api_key:
                 yield Label(
-                    "[red]Set OPENROUTER_API_KEY environment variable.[/red]",
+                    f"[red]Set {API_KEY_ENV} environment variable.[/red]",
                     id="no-key-warning",
                 )
             yield Label("What should be changed?")
@@ -101,7 +101,7 @@ class PromptScreen(ModalScreen[Script | None]):
             self.notify("Please describe what to change", severity="error")
             return
 
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        api_key = get_api_key()
         self.query_one("#submit-btn", Button).disabled = True
         self.notify("Modifying script...")
 
@@ -111,7 +111,7 @@ class PromptScreen(ModalScreen[Script | None]):
         )
 
     async def _modify(self, api_key: str, instruction: str):
-        client = OpenRouterClient(api_key=api_key)
+        client = BlackboxClient(api_key=api_key)
         return await client.modify_script(
             current_code=self._script.content,
             instruction=instruction,

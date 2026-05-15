@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll, Horizontal
 from textual.screen import ModalScreen
@@ -9,11 +7,13 @@ from textual.widgets import Button, Input, Label, Select, TextArea
 from textual.worker import Worker, WorkerState
 
 from scriptpilot.models import Script
-from scriptpilot.openrouter import (
-    OpenRouterClient,
+from scriptpilot.blackbox import (
+    API_KEY_ENV,
     AuthenticationError,
+    BlackboxClient,
     GenerationResult,
     RateLimitError,
+    get_api_key,
 )
 
 LANGUAGES = [("Bash", "bash"), ("Python", "python"), ("JavaScript", "js")]
@@ -22,7 +22,7 @@ TEXTUAL_LANGUAGES = {"bash": "bash", "python": "python", "js": "javascript"}
 
 
 class GenerateScreen(ModalScreen[Script | None]):
-    """Modal screen for AI script generation via OpenRouter."""
+    """Modal screen for AI script generation via blackbox.ai."""
 
     DEFAULT_CSS = """
     GenerateScreen {
@@ -62,20 +62,20 @@ class GenerateScreen(ModalScreen[Script | None]):
     }
     """
 
-    def __init__(self, default_model: str = "openai/gpt-4o"):
+    def __init__(self, default_model: str = "blackboxai/minimax/minimax-m2.5"):
         super().__init__()
         self._model = default_model
         self._generated = False
         self._result: GenerationResult | None = None
 
     def compose(self) -> ComposeResult:
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        api_key = get_api_key()
         with Vertical(id="gen-container"):
             with VerticalScroll(id="gen-scroll"):
                 yield Label("[bold]Generate Script with AI[/bold]")
                 if not api_key:
                     yield Label(
-                        "[red]Set OPENROUTER_API_KEY environment variable to use AI generation.[/red]",
+                        f"[red]Set {API_KEY_ENV} to use AI generation.[/red]",
                         id="no-key-warning",
                     )
                 yield Label("What should this script do?")
@@ -118,7 +118,7 @@ class GenerateScreen(ModalScreen[Script | None]):
             return
 
         language = self.query_one("#lang-select", Select).value
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        api_key = get_api_key()
 
         # Update result area language to match selection
         result_area = self.query_one("#result-area", TextArea)
@@ -134,7 +134,7 @@ class GenerateScreen(ModalScreen[Script | None]):
         )
 
     async def _generate(self, api_key: str, description: str, language: str):
-        client = OpenRouterClient(api_key=api_key)
+        client = BlackboxClient(api_key=api_key)
         return await client.generate_script(description, language, self._model)
 
     def on_worker_state_changed(self, event: Worker.StateChanged):
@@ -157,7 +157,7 @@ class GenerateScreen(ModalScreen[Script | None]):
             elif isinstance(error, RateLimitError):
                 self.notify("Rate limited, try again later", severity="error")
             else:
-                self.notify(f"Could not reach OpenRouter: {error}", severity="error")
+                self.notify(f"Could not reach Blackbox: {error}", severity="error")
             self.query_one("#generate-btn", Button).disabled = False
             self.query_one("#retry-btn", Button).disabled = not self._generated
 

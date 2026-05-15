@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import os
-
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select
 
+from scriptpilot.blackbox import API_KEY_ENV, get_api_key
 from scriptpilot.models import AppConfig
 from scriptpilot.secrets import SECRETS_PATH, load_secrets
 
@@ -44,7 +43,7 @@ class SettingsScreen(ModalScreen[AppConfig | None]):
         self._config = config
 
     def compose(self) -> ComposeResult:
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        api_key = get_api_key()
         key_status = "[green]Set[/green]" if api_key else "[red]Not set[/red]"
 
         if SECRETS_PATH.exists():
@@ -58,8 +57,10 @@ class SettingsScreen(ModalScreen[AppConfig | None]):
         with Vertical(id="settings-container"):
             yield Label("[bold]Settings[/bold]")
             yield Label("")
-            yield Label(f"OpenRouter API Key: {key_status}")
-            yield Label("[dim]Set via OPENROUTER_API_KEY environment variable[/dim]")
+            yield Label(f"Blackbox API Key: {key_status}")
+            yield Label(
+                f"[dim]Set {API_KEY_ENV} env var or add it to ~/.scriptpilot/.env[/dim]"
+            )
             yield Label("")
             yield Label("Default Model:")
             yield Input(
@@ -106,7 +107,7 @@ class SettingsScreen(ModalScreen[AppConfig | None]):
             editor_val = self.query_one("#editor-input", Input).value.strip() or None
             theme_val = self.query_one("#theme-select", Select).value
             config = AppConfig(
-                default_model=model or "openai/gpt-4o",
+                default_model=model or "blackboxai/minimax/minimax-m2.5",
                 python_command=python_cmd,
                 editor=editor_val,
                 theme=theme_val,

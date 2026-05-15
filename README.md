@@ -1,6 +1,6 @@
 # ScriptPilot
 
-A terminal UI for creating, managing, and executing automation scripts (bash, Python, JavaScript) with optional AI-powered script generation via [OpenRouter](https://openrouter.ai/).
+A terminal UI for creating, managing, and executing automation scripts (bash, Python, JavaScript) with optional AI-powered script generation via [blackbox.ai](https://www.blackbox.ai/).
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -23,7 +23,7 @@ A terminal UI for creating, managing, and executing automation scripts (bash, Py
 - **Script management** — create, edit, and delete bash, Python, and JavaScript scripts
 - **Script execution** — run scripts with real-time streaming output, exit codes, and configurable timeouts
 - **Argument support** — define typed arguments (string, integer, boolean) with defaults; interactive input form before execution
-- **AI generation** — describe what you want in plain English, pick a language, and let an LLM write the script via OpenRouter
+- **AI generation** — describe what you want in plain English, pick a language, and let an LLM write the script via blackbox.ai
 - **Persistence** — scripts and settings saved to `~/.scriptpilot/` across sessions
 - **Light/dark themes** — toggle with `t`
 
@@ -51,13 +51,13 @@ scriptpilot
 
 ## AI Generation (Optional)
 
-To use AI-powered script generation, set your [OpenRouter](https://openrouter.ai/) API key:
+To use AI-powered script generation, set your [blackbox.ai](https://www.blackbox.ai/) API key — either as an env var or in `~/.scriptpilot/.env`:
 
 ```bash
-export OPENROUTER_API_KEY="sk-or-v1-..."
+export BLACKBOX_API_KEY="sk-..."
 ```
 
-The default model is `openai/gpt-4o`. You can change it in Settings (`s`).
+The default model is `blackboxai/minimax/minimax-m2.5`. You can change it in Settings (`s`).
 
 ## Reproducible Execution
 

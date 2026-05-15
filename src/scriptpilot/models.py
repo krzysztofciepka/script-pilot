@@ -81,7 +81,7 @@ class RunRecord(BaseModel):
 class AppConfig(BaseModel):
     """Application configuration."""
 
-    default_model: str = "openai/gpt-4o"
+    default_model: str = "blackboxai/minimax/minimax-m2.5"
     python_command: str = "uv run --script"
     editor: str | None = None
     scripts_dir: str | None = None

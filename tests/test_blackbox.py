@@ -1,20 +1,18 @@
-import os
 import pytest
 import httpx
 import respx
-from scriptpilot.openrouter import (
-    OpenRouterClient,
+from scriptpilot.blackbox import (
     AuthenticationError,
-    OpenRouterConnectionError,
+    BlackboxClient,
+    BlackboxConnectionError,
     RateLimitError,
     strip_markdown_fences,
 )
-from scriptpilot.openrouter import (
+from scriptpilot.blackbox import (
     GenerationResult,
     MalformedResponseError,
     parse_generation_response,
 )
-from scriptpilot.models import ScriptArg
 
 
 class TestStripMarkdownFences:
@@ -35,15 +33,15 @@ class TestStripMarkdownFences:
         assert strip_markdown_fences(code) == "echo hi"
 
 
-class TestOpenRouterClient:
+class TestBlackboxClient:
     @pytest.fixture
     def client(self):
-        return OpenRouterClient(api_key="test-key")
+        return BlackboxClient(api_key="test-key")
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_generate_script_returns_generation_result(self, client):
-        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -56,7 +54,7 @@ class TestOpenRouterClient:
         result = await client.generate_script(
             description="echo something",
             language="bash",
-            model="openai/gpt-4o",
+            model="blackboxai/minimax/minimax-m2.5",
         )
         assert isinstance(result, GenerationResult)
         assert result.code == 'echo "generated"'
@@ -65,7 +63,7 @@ class TestOpenRouterClient:
     @respx.mock
     @pytest.mark.asyncio
     async def test_generate_script_with_args(self, client):
-        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -81,7 +79,7 @@ class TestOpenRouterClient:
         result = await client.generate_script(
             description="echo a message",
             language="bash",
-            model="openai/gpt-4o",
+            model="blackboxai/minimax/minimax-m2.5",
         )
         assert len(result.args) == 1
         assert result.args[0].name == "msg"
@@ -89,80 +87,62 @@ class TestOpenRouterClient:
     @respx.mock
     @pytest.mark.asyncio
     async def test_generate_retries_on_malformed(self, client):
-        route = respx.post("https://openrouter.ai/api/v1/chat/completions")
+        route = respx.post("https://api.blackbox.ai/v1/chat/completions")
         route.side_effect = [
             httpx.Response(200, json={"choices": [{"message": {"content": "no fences here"}}]}),
             httpx.Response(200, json={"choices": [{"message": {"content": '```bash\necho ok\n```\n\n```json\n{"args": []}\n```'}}]}),
         ]
-        result = await client.generate_script("test", "bash", "openai/gpt-4o")
+        result = await client.generate_script("test", "bash", "blackboxai/minimax/minimax-m2.5")
         assert result.code == "echo ok"
         assert route.call_count == 2
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_generate_raises_after_3_retries(self, client):
-        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
             return_value=httpx.Response(
                 200,
                 json={"choices": [{"message": {"content": "bad response"}}]},
             )
         )
         with pytest.raises(MalformedResponseError):
-            await client.generate_script("test", "bash", "openai/gpt-4o")
+            await client.generate_script("test", "bash", "blackboxai/minimax/minimax-m2.5")
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_auth_error(self, client):
-        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
             return_value=httpx.Response(401, json={"error": "invalid key"})
         )
         with pytest.raises(AuthenticationError):
-            await client.generate_script("x", "bash", "openai/gpt-4o")
+            await client.generate_script("x", "bash", "blackboxai/minimax/minimax-m2.5")
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_rate_limit_error(self, client):
-        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
             return_value=httpx.Response(429, json={"error": "rate limited"})
         )
         with pytest.raises(RateLimitError):
-            await client.generate_script("x", "bash", "openai/gpt-4o")
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_list_models(self, client):
-        respx.get("https://openrouter.ai/api/v1/models").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "data": [
-                        {"id": "openai/gpt-4o", "name": "GPT-4o"},
-                        {"id": "anthropic/claude-3.5-sonnet", "name": "Claude 3.5"},
-                    ]
-                },
-            )
-        )
-        models = await client.list_models()
-        assert len(models) == 2
-        assert models[0]["id"] == "openai/gpt-4o"
+            await client.generate_script("x", "bash", "blackboxai/minimax/minimax-m2.5")
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_server_error(self, client):
-        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
             return_value=httpx.Response(500, json={"error": "server error"})
         )
-        with pytest.raises(OpenRouterConnectionError):
-            await client.generate_script("x", "bash", "openai/gpt-4o")
+        with pytest.raises(BlackboxConnectionError):
+            await client.generate_script("x", "bash", "blackboxai/minimax/minimax-m2.5")
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_network_error(self, client):
-        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
             side_effect=httpx.ConnectError("Connection refused")
         )
-        with pytest.raises(OpenRouterConnectionError):
-            await client.generate_script("x", "bash", "openai/gpt-4o")
+        with pytest.raises(BlackboxConnectionError):
+            await client.generate_script("x", "bash", "blackboxai/minimax/minimax-m2.5")
 
 
 class TestParseGenerationResponse:
@@ -246,12 +226,12 @@ class TestParseGenerationResponse:
 class TestModifyScript:
     @pytest.fixture
     def client(self):
-        return OpenRouterClient(api_key="test-key")
+        return BlackboxClient(api_key="test-key")
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_modify_script_returns_generation_result(self, client):
-        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -268,7 +248,7 @@ class TestModifyScript:
             current_code='echo "original"',
             instruction="change to say modified",
             language="bash",
-            model="openai/gpt-4o",
+            model="blackboxai/minimax/minimax-m2.5",
         )
         assert isinstance(result, GenerationResult)
         assert result.code == 'echo "modified"'
@@ -276,19 +256,19 @@ class TestModifyScript:
     @respx.mock
     @pytest.mark.asyncio
     async def test_modify_script_retries_on_malformed(self, client):
-        route = respx.post("https://openrouter.ai/api/v1/chat/completions")
+        route = respx.post("https://api.blackbox.ai/v1/chat/completions")
         route.side_effect = [
             httpx.Response(200, json={"choices": [{"message": {"content": "plain text"}}]}),
             httpx.Response(200, json={"choices": [{"message": {"content": '```bash\necho ok\n```\n\n```json\n{"args": []}\n```'}}]}),
         ]
-        result = await client.modify_script('echo "old"', "fix it", "bash", "openai/gpt-4o")
+        result = await client.modify_script('echo "old"', "fix it", "bash", "blackboxai/minimax/minimax-m2.5")
         assert result.code == "echo ok"
         assert route.call_count == 2
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_modify_script_preserves_args(self, client):
-        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -305,7 +285,7 @@ class TestModifyScript:
             current_code='print("hello")',
             instruction="read from a file argument",
             language="python",
-            model="openai/gpt-4o",
+            model="blackboxai/minimax/minimax-m2.5",
         )
         assert len(result.args) == 1
         assert result.args[0].name == "input_file"
@@ -313,11 +293,11 @@ class TestModifyScript:
     @respx.mock
     @pytest.mark.asyncio
     async def test_modify_auth_error(self, client):
-        respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
             return_value=httpx.Response(401, json={"error": "invalid key"})
         )
         with pytest.raises(AuthenticationError):
-            await client.modify_script("x", "y", "bash", "openai/gpt-4o")
+            await client.modify_script("x", "y", "bash", "blackboxai/minimax/minimax-m2.5")
 
 
 class TestParseArgStyle:
