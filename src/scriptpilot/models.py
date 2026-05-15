@@ -43,6 +43,7 @@ class Script(BaseModel):
     cwd: str | None = None
     env: dict[str, str] = {}
     arg_style: Literal["positional", "flags"] = "positional"
+    tags: list[str] = []
 
     def model_post_init(self, __context):
         if not self.id:
@@ -66,6 +67,7 @@ class RunRecord(BaseModel):
     timed_out: bool
     duration: float
     lines: list[OutputLine] = []
+    cancelled: bool = False
 
     def combined_text(self) -> str:
         """All lines in chronological order, no stream marker."""

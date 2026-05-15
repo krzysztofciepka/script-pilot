@@ -396,3 +396,61 @@ class TestRunRecordLines:
         restored = RunRecord.model_validate_json(dumped)
         assert restored.lines == r.lines
         assert isinstance(restored.lines[0], OutputLine)
+
+
+class TestScriptTags:
+    def test_tags_default_empty(self):
+        s = Script(name="x", description="y", type="bash", content="echo hi")
+        assert s.tags == []
+
+    def test_tags_round_trip(self):
+        s = Script(
+            name="x", description="y", type="bash", content="echo hi",
+            tags=["csv", "jira"],
+        )
+        data = s.model_dump()
+        assert data["tags"] == ["csv", "jira"]
+        s2 = Script(**data)
+        assert s2.tags == ["csv", "jira"]
+
+    def test_tags_loads_from_meta_without_field(self):
+        # Simulate an old meta.json that didn't have `tags`.
+        legacy = {
+            "id": "abc", "name": "x", "description": "y",
+            "type": "bash", "content": "echo hi",
+        }
+        s = Script(**legacy)
+        assert s.tags == []
+
+
+class TestRunRecordCancelled:
+    def test_cancelled_default_false(self):
+        r = RunRecord(
+            script_id="a", script_name="a",
+            timestamp="2026-05-15T10:00:00",
+            exit_code=0, timed_out=False, duration=1.0,
+        )
+        assert r.cancelled is False
+
+    def test_cancelled_round_trip(self):
+        r = RunRecord(
+            script_id="a", script_name="a",
+            timestamp="2026-05-15T10:00:00",
+            exit_code=-1, timed_out=False, duration=2.3,
+            cancelled=True,
+            lines=[OutputLine("stdout", "hi")],
+        )
+        data = r.model_dump()
+        assert data["cancelled"] is True
+        r2 = RunRecord(**data)
+        assert r2.cancelled is True
+
+    def test_cancelled_loads_legacy_record(self):
+        legacy = {
+            "script_id": "a", "script_name": "a",
+            "timestamp": "2026-05-15T10:00:00",
+            "exit_code": 0, "timed_out": False, "duration": 1.0,
+            "lines": [],
+        }
+        r = RunRecord(**legacy)
+        assert r.cancelled is False
