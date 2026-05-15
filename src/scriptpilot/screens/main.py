@@ -32,6 +32,7 @@ class MainScreen(Screen):
         ("c", "clone_script", "Clone"),
         ("f", "toggle_favorite", "Fav"),
         ("s", "cancel_script", "Cancel"),
+        ("slash", "focus_filter", "Filter"),
     ]
 
     DEFAULT_CSS = """
@@ -216,6 +217,9 @@ class MainScreen(Screen):
         self.query_one(MainPanel).show_script_details(updated, last_run)
         label = "Favorited" if updated.favorite else "Unfavorited"
         self.notify(f"{label} '{updated.name}'")
+
+    def action_focus_filter(self):
+        self.query_one(ScriptList).focus_filter()
 
     def action_cancel_script(self):
         if self._cancel_event is None:

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from rich.markup import escape
 from textual.app import ComposeResult
 from textual.message import Message
 from textual.widget import Widget
-from textual.widgets import ListItem, ListView, Label
-from rich.markup import escape
+from textual.widgets import ListItem, ListView, Label, Input
 
 from scriptpilot.models import Script
 
@@ -28,7 +28,6 @@ class ScriptSelected(Message):
         self.script = script
 
 
-
 class ScriptList(Widget):
     """Left panel listing saved scripts."""
 
@@ -38,31 +37,73 @@ class ScriptList(Widget):
         dock: left;
         border-right: solid $primary;
     }
+    ScriptList Input {
+        display: none;
+        height: 3;
+    }
+    ScriptList Input.visible {
+        display: block;
+    }
     ScriptList ListView {
         height: 1fr;
     }
     """
 
+    BINDINGS = [("escape", "clear_filter", "Clear filter")]
+
     def __init__(self, scripts: list[Script] | None = None):
         super().__init__()
         self._scripts: list[Script] = scripts or []
+        self._current_query: str = ""
 
     def compose(self) -> ComposeResult:
-        sorted_scripts = self._sorted(self._scripts)
+        yield Input(placeholder="Filter…", id="filter-input")
         with ListView():
-            for script in sorted_scripts:
-                label = self._make_label(script)
-                yield ListItem(Label(label), name=script.id)
+            for script in self._sorted(self._scripts):
+                yield ListItem(Label(self._make_label(script)), name=script.id)
+
+    def focus_filter(self):
+        """Public entry point for MainScreen's '/' binding."""
+        inp = self.query_one("#filter-input", Input)
+        inp.add_class("visible")
+        inp.focus()
+
+    def action_clear_filter(self):
+        inp = self.query_one("#filter-input", Input)
+        had_value = bool(inp.value)
+        inp.value = ""
+        inp.remove_class("visible")
+        if had_value:
+            self._current_query = ""
+            self._render_list()
+        self.query_one(ListView).focus()
 
     def update_scripts(self, scripts: list[Script]):
-        """Refresh the list with new script data."""
+        """Refresh the list with new script data, preserving the active filter."""
         self._scripts = scripts
-        sorted_scripts = self._sorted(scripts)
+        self._render_list()
+
+    def on_input_changed(self, event: Input.Changed):
+        if event.input.id == "filter-input":
+            self._current_query = event.value
+            self._render_list()
+
+    def on_input_submitted(self, event: Input.Submitted):
+        if event.input.id == "filter-input":
+            self.query_one(ListView).focus()
+
+    def on_key(self, event):
+        inp = self.query_one("#filter-input", Input)
+        if inp.has_focus and event.key == "down":
+            self.query_one(ListView).focus()
+            event.stop()
+
+    def _render_list(self):
+        filtered = [s for s in self._scripts if _matches(s, self._current_query)]
         lv = self.query_one(ListView)
         lv.clear()
-        for script in sorted_scripts:
-            label = self._make_label(script)
-            lv.append(ListItem(Label(label), name=script.id))
+        for script in self._sorted(filtered):
+            lv.append(ListItem(Label(self._make_label(script)), name=script.id))
 
     @staticmethod
     def _sorted(scripts: list[Script]) -> list[Script]:
