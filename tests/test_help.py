@@ -158,3 +158,13 @@ class TestAppBindings:
         items = dict(groups["App"].items)
         assert items.get("?") == "Help"
         assert items.get("f1") == "Help"
+
+    def test_show_help_action_resolves_on_app_class(self):
+        """The binding's action string must resolve to a real method.
+
+        Without this, a typo'd action name only surfaces when a user presses
+        the key in production.
+        """
+        from scriptpilot.app import ScriptPilotApp
+
+        assert callable(getattr(ScriptPilotApp, "action_show_help", None))

@@ -79,6 +79,8 @@ class ScriptPilotApp(App):
         self.push_screen(SettingsScreen(self._config), callback=on_result)
 
     def action_show_help(self):
+        # Deferred import: HelpScreen is only used on demand, and importing it
+        # eagerly would pull MarkdownViewer into the startup path.
         from scriptpilot.screens.help import HelpScreen
         self.push_screen(HelpScreen())
 
