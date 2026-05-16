@@ -36,6 +36,7 @@ def _resolve_groups() -> list[tuple[type, str]]:
     """
     from scriptpilot.app import ScriptPilotApp
     from scriptpilot.screens.edit import EditScreen
+    from scriptpilot.screens.help import HelpScreen
     from scriptpilot.screens.history import HistoryScreen
     from scriptpilot.screens.json_view import JsonViewScreen
     from scriptpilot.screens.main import MainScreen
@@ -50,6 +51,7 @@ def _resolve_groups() -> list[tuple[type, str]]:
         (EditScreen, "Edit screen"),
         (HistoryScreen, "History modal"),
         (JsonViewScreen, "JSON view"),
+        (HelpScreen, "Help"),
     ]
 
 
