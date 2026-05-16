@@ -123,6 +123,7 @@ Change `Python command` in Settings to `python3` if you don't have [`uv`](https:
 | `g` | Generate script with AI |
 | `s` | Settings |
 | `t` | Toggle light/dark theme |
+| `?` / `F1` | Open in-app help |
 | `q` | Quit |
 
 ## Development
