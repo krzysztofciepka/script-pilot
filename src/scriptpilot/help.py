@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.resources
 from dataclasses import dataclass, field
 
 
@@ -83,3 +84,15 @@ def collect_bindings() -> list[BindingGroup]:
                 items.append(n)
         result.append(BindingGroup(label=label, items=items))
     return result
+
+
+PLACEHOLDER = "<!-- SHORTCUTS_TABLE -->"
+
+
+def load_help_markdown() -> str:
+    """Return the help text with the shortcuts placeholder substituted."""
+    raw = (importlib.resources.files("scriptpilot") / "help.md").read_text(
+        encoding="utf-8"
+    )
+    table = render_shortcuts_table(collect_bindings())
+    return raw.replace(PLACEHOLDER, table)

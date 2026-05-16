@@ -120,3 +120,25 @@ class TestCollectBindings:
 
         items = dict(collect_bindings()[0].items)
         assert items == {"a": "Visible"}
+
+
+from scriptpilot.help import load_help_markdown
+
+
+class TestLoadHelpMarkdown:
+    def test_substitutes_placeholder(self):
+        out = load_help_markdown()
+        assert "<!-- SHORTCUTS_TABLE -->" not in out
+        # The generated table has these structural markers.
+        assert "| Key | Action |" in out
+
+    def test_every_collected_binding_appears_in_output(self):
+        out = load_help_markdown()
+        for group in collect_bindings():
+            for key, _desc in group.items:
+                assert f"`{key}`" in out, f"key {key!r} missing from rendered help"
+
+    def test_keeps_prose_chapter_headings(self):
+        out = load_help_markdown()
+        assert "## Welcome" in out
+        assert "## Reference: Shortcuts" in out
