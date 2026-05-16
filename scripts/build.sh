@@ -20,6 +20,7 @@ uv run pyinstaller \
     --hidden-import httpx \
     --hidden-import pydantic \
     --collect-data textual \
+    --add-data src/scriptpilot/help.md:scriptpilot \
     src/scriptpilot/__main__.py
 
 echo "Build complete: dist/scriptpilot"
