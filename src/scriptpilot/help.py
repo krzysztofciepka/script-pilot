@@ -58,13 +58,15 @@ def _normalize(binding) -> tuple[str, str] | None:
         if len(binding) < 3:
             return None
         key, _action, desc = binding[0], binding[1], binding[2]
+        show = binding[3] if len(binding) > 3 else True
     else:
         # Textual Binding object (or compatible).
         key = getattr(binding, "key", None)
         desc = getattr(binding, "description", None)
+        show = getattr(binding, "show", True)
         if not key:
             return None
-    if not desc:
+    if not desc or not show:
         return None
     return key, desc
 

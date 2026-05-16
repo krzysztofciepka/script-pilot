@@ -89,3 +89,34 @@ class TestCollectBindings:
         groups = collect_bindings()
         items = dict(groups[0].items)
         assert items == {"x": "FromObject"}
+
+    def test_skips_show_false_tuples(self, monkeypatch):
+        """4-tuple BINDINGS with show=False are hidden in Textual; filter them."""
+        from scriptpilot import help as help_mod
+
+        class FakeApp:
+            BINDINGS = [
+                ("a", "noop", "Visible", True),
+                ("b", "noop", "Hidden", False),
+            ]
+
+        monkeypatch.setattr(help_mod, "_resolve_groups", lambda: [(FakeApp, "Fake")])
+
+        items = dict(collect_bindings()[0].items)
+        assert items == {"a": "Visible"}
+
+    def test_skips_show_false_binding_objects(self, monkeypatch):
+        """Binding(show=False) is hidden in Textual; filter them."""
+        from scriptpilot import help as help_mod
+        from textual.binding import Binding
+
+        class FakeApp:
+            BINDINGS = [
+                Binding("a", "noop", "Visible"),
+                Binding("b", "noop", "Hidden", show=False),
+            ]
+
+        monkeypatch.setattr(help_mod, "_resolve_groups", lambda: [(FakeApp, "Fake")])
+
+        items = dict(collect_bindings()[0].items)
+        assert items == {"a": "Visible"}
