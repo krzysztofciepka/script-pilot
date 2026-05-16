@@ -143,3 +143,18 @@ class TestLoadHelpMarkdown:
         out = load_help_markdown()
         assert "## Welcome" in out
         assert "## Reference: Shortcuts" in out
+
+
+class TestAppBindings:
+    def test_help_bindings_present_on_app_class(self):
+        from scriptpilot.app import ScriptPilotApp
+
+        keys = {b[0] for b in ScriptPilotApp.BINDINGS if isinstance(b, tuple)}
+        assert "?" in keys
+        assert "f1" in keys
+
+    def test_help_appears_in_collected_app_group(self):
+        groups = {g.label: g for g in collect_bindings()}
+        items = dict(groups["App"].items)
+        assert items.get("?") == "Help"
+        assert items.get("f1") == "Help"

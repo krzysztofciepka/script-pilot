@@ -26,6 +26,8 @@ class ScriptPilotApp(App):
         ("s", "open_settings", "Settings"),
         ("g", "generate", "Generate"),
         ("t", "toggle_dark", "Theme"),
+        ("?", "show_help", "Help"),
+        ("f1", "show_help", "Help"),
     ]
 
     def __init__(self):
@@ -75,6 +77,10 @@ class ScriptPilotApp(App):
                 self.notify("Settings saved")
 
         self.push_screen(SettingsScreen(self._config), callback=on_result)
+
+    def action_show_help(self):
+        from scriptpilot.screens.help import HelpScreen
+        self.push_screen(HelpScreen())
 
     def action_generate(self):
         def on_result(script: Script | None):
