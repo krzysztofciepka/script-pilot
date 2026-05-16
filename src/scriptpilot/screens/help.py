@@ -28,6 +28,9 @@ class HelpScreen(ModalScreen[None]):
     }
     """
 
+    # "?" is captured here on purpose: the App-level binding opens this
+    # screen, and ModalScreen bindings take priority once it's focused, so
+    # pressing "?" again closes the modal instead of stacking a new one.
     BINDINGS = [
         ("escape", "close", "Close"),
         ("q", "close", "Close"),
