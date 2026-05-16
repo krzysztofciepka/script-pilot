@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from scriptpilot.help import BindingGroup, render_shortcuts_table
+from scriptpilot.help import BindingGroup, collect_bindings, load_help_markdown, render_shortcuts_table
 
 
 class TestRenderShortcutsTable:
@@ -39,9 +39,6 @@ class TestRenderShortcutsTable:
 
         assert "### Empty" not in out
         assert "### Real" in out
-
-
-from scriptpilot.help import collect_bindings
 
 
 class TestCollectBindings:
@@ -122,9 +119,6 @@ class TestCollectBindings:
         assert items == {"a": "Visible"}
 
 
-from scriptpilot.help import load_help_markdown
-
-
 class TestLoadHelpMarkdown:
     def test_substitutes_placeholder(self):
         out = load_help_markdown()
@@ -137,6 +131,13 @@ class TestLoadHelpMarkdown:
         for group in collect_bindings():
             for key, _desc in group.items:
                 assert f"`{key}`" in out, f"key {key!r} missing from rendered help"
+
+    def test_includes_known_app_bindings(self):
+        """Spot-check: the rendered help mentions the real App-level shortcuts."""
+        out = load_help_markdown()
+        # Inline-code keys, as rendered by render_shortcuts_table.
+        for key in ("`q`", "`s`", "`g`", "`t`"):
+            assert key in out, f"expected {key} in rendered help"
 
     def test_keeps_prose_chapter_headings(self):
         out = load_help_markdown()
