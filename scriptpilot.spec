@@ -1,16 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_all
 
 datas = [('src/scriptpilot/help.md', 'scriptpilot')]
-datas += collect_data_files('textual')
+binaries = []
+hiddenimports = ['httpx', 'pydantic']
+tmp_ret = collect_all('textual')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
     ['src/scriptpilot/__main__.py'],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
-    hiddenimports=['textual', 'textual.widgets', 'textual.screen', 'textual.css', 'httpx', 'pydantic'],
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

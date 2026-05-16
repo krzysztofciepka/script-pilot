@@ -13,13 +13,9 @@ echo "Building binary..."
 uv run pyinstaller \
     --onefile \
     --name scriptpilot \
-    --hidden-import textual \
-    --hidden-import textual.widgets \
-    --hidden-import textual.screen \
-    --hidden-import textual.css \
+    --collect-all textual \
     --hidden-import httpx \
     --hidden-import pydantic \
-    --collect-data textual \
     --add-data src/scriptpilot/help.md:scriptpilot \
     src/scriptpilot/__main__.py
 
