@@ -65,3 +65,28 @@ async def test_loop_respects_tool_call_cap(tmp_path):
     tool_results = [e for e in events if e.kind == "tool_result"]
     assert len(tool_results) <= 3
     assert events[-1].kind in ("done", "error")
+
+
+@respx.mock
+async def test_loop_tool_error_does_not_abort_or_dangle(tmp_path):
+    # update_script with an invalid meta_patch (a choice arg with no choices)
+    # raises inside dispatch. The loop must feed the error back as a tool
+    # message and keep going — never leave a dangling tool_call in history.
+    bad_call = [{"id": "c1", "type": "function",
+                 "function": {"name": "update_script",
+                              "arguments": json.dumps(
+                                  {"meta_patch": {"args": [{"name": "x", "type": "choice"}]}})}}]
+    respx.post(BASE).side_effect = [
+        _assistant(content="", tool_calls=bad_call),
+        _assistant(content="Recovered."),
+    ]
+    s = ChatSession.new(tmp_path / "w")
+    s.messages.append({"role": "user", "content": "go"})
+    events, emit = _collect()
+    await run_agent_loop(s, "m", "key", max_tool_calls=25, bash_timeout=10, emit=emit)
+    # Every assistant tool_call has a matching tool response (valid history).
+    tool_ids = [m["tool_call_id"] for m in s.messages if m.get("role") == "tool"]
+    assert "c1" in tool_ids
+    # The loop continued to completion instead of aborting on the tool error.
+    assert events[-1].kind == "done"
+    assert any(e.kind == "tool_result" for e in events)

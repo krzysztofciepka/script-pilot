@@ -52,15 +52,20 @@ async def run_agent_loop(
                 emit(AgentEvent("done"))
                 return
 
-            for tc in tool_calls:
+            for i, tc in enumerate(tool_calls):
                 if calls >= max_tool_calls:
-                    session.messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tc["id"],
-                            "content": "tool-call limit reached; stopping.",
-                        }
-                    )
+                    # Append a tool response for EVERY remaining tool_call so the
+                    # assistant's tool_calls message is never left dangling — an
+                    # unmatched tool_call_id makes the persisted history invalid
+                    # and the next API request would be rejected.
+                    for rest in tool_calls[i:]:
+                        session.messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": rest["id"],
+                                "content": "tool-call limit reached; stopping.",
+                            }
+                        )
                     emit(AgentEvent("done"))
                     return
                 calls += 1
@@ -72,9 +77,14 @@ async def run_agent_loop(
                 emit(AgentEvent("tool_started", tool=name))
                 # dispatch_tool runs blocking subprocesses (bash/verify); off-thread
                 # it so the Textual event loop stays responsive during tool calls.
-                result = await asyncio.to_thread(
-                    dispatch_tool, name, args, session, bash_timeout=bash_timeout
-                )
+                # A failing tool must not abort the loop or leave a dangling
+                # tool_call: feed the error back so the model can self-correct.
+                try:
+                    result = await asyncio.to_thread(
+                        dispatch_tool, name, args, session, bash_timeout=bash_timeout
+                    )
+                except Exception as e:
+                    result = f"tool error: {e}"
                 session.messages.append(
                     {"role": "tool", "tool_call_id": tc["id"], "content": result}
                 )
