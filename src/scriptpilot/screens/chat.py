@@ -86,6 +86,11 @@ class ChatScreen(ModalScreen[Script | None]):
             elif role == "assistant" and (msg.get("content") or "").strip():
                 self._append_transcript("agent", msg["content"])
 
+    def on_unmount(self):
+        # Safety net: remove the session working dir on any teardown (e.g. the
+        # user quits mid-conversation), not just the Save/Cancel paths.
+        self.session.cleanup()
+
     def on_input_submitted(self, event: Input.Submitted):
         if event.input.id == "chat-input":
             text = event.value.strip()
