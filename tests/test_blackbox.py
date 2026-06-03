@@ -1,361 +1,97 @@
-import pytest
 import httpx
+import pytest
 import respx
+
 from scriptpilot.blackbox import (
     AuthenticationError,
-    BlackboxClient,
     BlackboxConnectionError,
     RateLimitError,
-    strip_markdown_fences,
-)
-from scriptpilot.blackbox import (
-    GenerationResult,
-    MalformedResponseError,
-    parse_generation_response,
+    chat_completion,
+    get_api_key,
 )
 
-
-class TestStripMarkdownFences:
-    def test_no_fences(self):
-        code = 'echo "hello"'
-        assert strip_markdown_fences(code) == code
-
-    def test_strip_backtick_fences(self):
-        code = '```bash\necho "hello"\n```'
-        assert strip_markdown_fences(code) == 'echo "hello"'
-
-    def test_strip_fences_with_language(self):
-        code = '```python\nprint("hi")\n```'
-        assert strip_markdown_fences(code) == 'print("hi")'
-
-    def test_strip_fences_no_language(self):
-        code = '```\necho hi\n```'
-        assert strip_markdown_fences(code) == "echo hi"
+BASE = "https://api.blackbox.ai/v1/chat/completions"
 
 
-class TestBlackboxClient:
-    @pytest.fixture
-    def client(self):
-        return BlackboxClient(api_key="test-key")
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_generate_script_returns_generation_result(self, client):
-        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "choices": [
-                        {"message": {"content": '```bash\necho "generated"\n```\n\n```json\n{"args": []}\n```'}}
-                    ]
-                },
-            )
+@respx.mock
+async def test_chat_completion_returns_assistant_message():
+    respx.post(BASE).mock(
+        return_value=httpx.Response(
+            200,
+            json={"choices": [{"message": {"role": "assistant", "content": "hi"}}]},
         )
-        result = await client.generate_script(
-            description="echo something",
-            language="bash",
-            model="blackboxai/minimax/minimax-m2.5",
+    )
+    msg = await chat_completion(
+        [{"role": "user", "content": "hello"}], "model-x", api_key="k"
+    )
+    assert msg["content"] == "hi"
+
+
+@respx.mock
+async def test_chat_completion_passes_tools_and_tool_choice():
+    route = respx.post(BASE).mock(
+        return_value=httpx.Response(
+            200, json={"choices": [{"message": {"role": "assistant", "content": ""}}]}
         )
-        assert isinstance(result, GenerationResult)
-        assert result.code == 'echo "generated"'
-        assert result.args == []
+    )
+    tools = [{"type": "function", "function": {"name": "t", "parameters": {}}}]
+    await chat_completion([], "m", api_key="k", tools=tools)
+    sent = respx.calls.last.request
+    import json
+    body = json.loads(sent.content)
+    assert body["tools"] == tools
+    assert body["tool_choice"] == "auto"
 
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_generate_script_with_args(self, client):
-        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "choices": [
-                        {"message": {"content": (
-                            '```bash\necho "$1"\n```\n\n'
-                            '```json\n{"args": [{"name": "msg", "type": "string", "required": true, "default": ""}]}\n```'
-                        )}}
-                    ]
-                },
-            )
+
+@respx.mock
+async def test_chat_completion_returns_tool_calls():
+    respx.post(BASE).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "c1",
+                                    "type": "function",
+                                    "function": {"name": "bash", "arguments": "{}"},
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
         )
-        result = await client.generate_script(
-            description="echo a message",
-            language="bash",
-            model="blackboxai/minimax/minimax-m2.5",
-        )
-        assert len(result.args) == 1
-        assert result.args[0].name == "msg"
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_generate_retries_on_malformed(self, client):
-        route = respx.post("https://api.blackbox.ai/v1/chat/completions")
-        route.side_effect = [
-            httpx.Response(200, json={"choices": [{"message": {"content": "no fences here"}}]}),
-            httpx.Response(200, json={"choices": [{"message": {"content": '```bash\necho ok\n```\n\n```json\n{"args": []}\n```'}}]}),
-        ]
-        result = await client.generate_script("test", "bash", "blackboxai/minimax/minimax-m2.5")
-        assert result.code == "echo ok"
-        assert route.call_count == 2
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_generate_raises_after_3_retries(self, client):
-        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200,
-                json={"choices": [{"message": {"content": "bad response"}}]},
-            )
-        )
-        with pytest.raises(MalformedResponseError):
-            await client.generate_script("test", "bash", "blackboxai/minimax/minimax-m2.5")
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_auth_error(self, client):
-        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
-            return_value=httpx.Response(401, json={"error": "invalid key"})
-        )
-        with pytest.raises(AuthenticationError):
-            await client.generate_script("x", "bash", "blackboxai/minimax/minimax-m2.5")
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_rate_limit_error(self, client):
-        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
-            return_value=httpx.Response(429, json={"error": "rate limited"})
-        )
-        with pytest.raises(RateLimitError):
-            await client.generate_script("x", "bash", "blackboxai/minimax/minimax-m2.5")
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_server_error(self, client):
-        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
-            return_value=httpx.Response(500, json={"error": "server error"})
-        )
-        with pytest.raises(BlackboxConnectionError):
-            await client.generate_script("x", "bash", "blackboxai/minimax/minimax-m2.5")
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_network_error(self, client):
-        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
-            side_effect=httpx.ConnectError("Connection refused")
-        )
-        with pytest.raises(BlackboxConnectionError):
-            await client.generate_script("x", "bash", "blackboxai/minimax/minimax-m2.5")
+    )
+    msg = await chat_completion([], "m", api_key="k")
+    assert msg["tool_calls"][0]["function"]["name"] == "bash"
 
 
-class TestParseGenerationResponse:
-    def test_parse_valid_response(self):
-        text = (
-            '```bash\necho "hello $1"\n```\n\n'
-            '```json\n{"args": [{"name": "greeting", "type": "string", "required": true, "default": ""}]}\n```'
-        )
-        result = parse_generation_response(text)
-        assert isinstance(result, GenerationResult)
-        assert 'echo "hello $1"' in result.code
-        assert len(result.args) == 1
-        assert result.args[0].name == "greeting"
-        assert result.args[0].type == "string"
-
-    def test_parse_python_code_block(self):
-        text = (
-            '```python\nprint("hi")\n```\n\n'
-            '```json\n{"args": []}\n```'
-        )
-        result = parse_generation_response(text)
-        assert 'print("hi")' in result.code
-        assert result.args == []
-
-    def test_parse_javascript_code_block(self):
-        text = (
-            '```javascript\nconsole.log("hi")\n```\n\n'
-            '```json\n{"args": []}\n```'
-        )
-        result = parse_generation_response(text)
-        assert 'console.log("hi")' in result.code
-
-    def test_parse_empty_args(self):
-        text = '```bash\necho hi\n```\n\n```json\n{"args": []}\n```'
-        result = parse_generation_response(text)
-        assert result.args == []
-
-    def test_parse_multiple_args(self):
-        text = (
-            '```bash\necho "$1 $2"\n```\n\n'
-            '```json\n{"args": ['
-            '{"name": "input", "type": "string", "required": true, "default": ""},'
-            '{"name": "verbose", "type": "boolean", "required": false, "default": false}'
-            ']}\n```'
-        )
-        result = parse_generation_response(text)
-        assert len(result.args) == 2
-        assert result.args[0].name == "input"
-        assert result.args[1].name == "verbose"
-        assert result.args[1].type == "boolean"
-
-    def test_malformed_no_code_block(self):
-        text = 'echo "hello"\n\n```json\n{"args": []}\n```'
-        with pytest.raises(MalformedResponseError):
-            parse_generation_response(text)
-
-    def test_malformed_no_json_block(self):
-        text = '```bash\necho hi\n```\n\nno json here'
-        with pytest.raises(MalformedResponseError):
-            parse_generation_response(text)
-
-    def test_malformed_invalid_json(self):
-        text = '```bash\necho hi\n```\n\n```json\n{invalid json}\n```'
-        with pytest.raises(MalformedResponseError):
-            parse_generation_response(text)
-
-    def test_malformed_missing_args_key(self):
-        text = '```bash\necho hi\n```\n\n```json\n{"params": []}\n```'
-        with pytest.raises(MalformedResponseError):
-            parse_generation_response(text)
-
-    def test_malformed_invalid_arg_type(self):
-        text = (
-            '```bash\necho hi\n```\n\n'
-            '```json\n{"args": [{"name": "x", "type": "float", "required": true, "default": null}]}\n```'
-        )
-        with pytest.raises(MalformedResponseError):
-            parse_generation_response(text)
+@respx.mock
+async def test_chat_completion_auth_error():
+    respx.post(BASE).mock(return_value=httpx.Response(401))
+    with pytest.raises(AuthenticationError):
+        await chat_completion([], "m", api_key="bad")
 
 
-class TestModifyScript:
-    @pytest.fixture
-    def client(self):
-        return BlackboxClient(api_key="test-key")
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_modify_script_returns_generation_result(self, client):
-        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "choices": [
-                        {"message": {"content": (
-                            '```bash\necho "modified"\n```\n\n'
-                            '```json\n{"args": []}\n```'
-                        )}}
-                    ]
-                },
-            )
-        )
-        result = await client.modify_script(
-            current_code='echo "original"',
-            instruction="change to say modified",
-            language="bash",
-            model="blackboxai/minimax/minimax-m2.5",
-        )
-        assert isinstance(result, GenerationResult)
-        assert result.code == 'echo "modified"'
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_modify_script_retries_on_malformed(self, client):
-        route = respx.post("https://api.blackbox.ai/v1/chat/completions")
-        route.side_effect = [
-            httpx.Response(200, json={"choices": [{"message": {"content": "plain text"}}]}),
-            httpx.Response(200, json={"choices": [{"message": {"content": '```bash\necho ok\n```\n\n```json\n{"args": []}\n```'}}]}),
-        ]
-        result = await client.modify_script('echo "old"', "fix it", "bash", "blackboxai/minimax/minimax-m2.5")
-        assert result.code == "echo ok"
-        assert route.call_count == 2
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_modify_script_preserves_args(self, client):
-        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "choices": [
-                        {"message": {"content": (
-                            '```python\nimport sys\nprint(sys.argv[1])\n```\n\n'
-                            '```json\n{"args": [{"name": "input_file", "type": "string", "required": true, "default": ""}]}\n```'
-                        )}}
-                    ]
-                },
-            )
-        )
-        result = await client.modify_script(
-            current_code='print("hello")',
-            instruction="read from a file argument",
-            language="python",
-            model="blackboxai/minimax/minimax-m2.5",
-        )
-        assert len(result.args) == 1
-        assert result.args[0].name == "input_file"
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_modify_auth_error(self, client):
-        respx.post("https://api.blackbox.ai/v1/chat/completions").mock(
-            return_value=httpx.Response(401, json={"error": "invalid key"})
-        )
-        with pytest.raises(AuthenticationError):
-            await client.modify_script("x", "y", "bash", "blackboxai/minimax/minimax-m2.5")
+@respx.mock
+async def test_chat_completion_rate_limit():
+    respx.post(BASE).mock(return_value=httpx.Response(429))
+    with pytest.raises(RateLimitError):
+        await chat_completion([], "m", api_key="k")
 
 
-class TestParseArgStyle:
-    def test_arg_style_present(self):
-        text = (
-            '```bash\necho hi\n```\n\n'
-            '```json\n{"args": [], "arg_style": "flags"}\n```'
-        )
-        result = parse_generation_response(text)
-        assert result.arg_style == "flags"
-
-    def test_arg_style_missing_defaults_positional(self):
-        text = (
-            '```bash\necho hi\n```\n\n'
-            '```json\n{"args": []}\n```'
-        )
-        result = parse_generation_response(text)
-        assert result.arg_style == "positional"
-
-    def test_arg_style_invalid_raises(self):
-        text = (
-            '```bash\necho hi\n```\n\n'
-            '```json\n{"args": [], "arg_style": "kwargs"}\n```'
-        )
-        with pytest.raises(MalformedResponseError):
-            parse_generation_response(text)
+@respx.mock
+async def test_chat_completion_server_error_is_connection_error():
+    respx.post(BASE).mock(return_value=httpx.Response(500))
+    with pytest.raises(BlackboxConnectionError):
+        await chat_completion([], "m", api_key="k")
 
 
-class TestParseChoiceArg:
-    def test_choice_with_choices(self):
-        text = (
-            '```bash\necho $1\n```\n\n'
-            '```json\n{"args": ['
-            '{"name": "env", "type": "choice", "required": true, '
-            '"choices": ["dev", "prod"]}'
-            ']}\n```'
-        )
-        result = parse_generation_response(text)
-        assert result.args[0].type == "choice"
-        assert result.args[0].choices == ["dev", "prod"]
-
-    def test_choice_missing_choices_raises(self):
-        text = (
-            '```bash\necho $1\n```\n\n'
-            '```json\n{"args": ['
-            '{"name": "env", "type": "choice", "required": true}'
-            ']}\n```'
-        )
-        with pytest.raises(MalformedResponseError):
-            parse_generation_response(text)
-
-    def test_path_arg(self):
-        text = (
-            '```bash\ncat $1\n```\n\n'
-            '```json\n{"args": ['
-            '{"name": "p", "type": "path", "required": true}'
-            ']}\n```'
-        )
-        result = parse_generation_response(text)
-        assert result.args[0].type == "path"
-        assert result.args[0].choices is None
+def test_get_api_key_prefers_env(monkeypatch):
+    monkeypatch.setenv("BLACKBOX_API_KEY", "env-key")
+    assert get_api_key() == "env-key"
