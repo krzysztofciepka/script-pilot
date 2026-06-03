@@ -35,3 +35,44 @@ def test_denylist_blocks_destructive():
 def test_run_bash_blocks_denied(tmp_path):
     out = run_bash("rm -rf /", tmp_path, timeout=10)
     assert "blocked" in out.lower()
+
+
+from scriptpilot.agent.session import ChatSession
+from scriptpilot.agent.tools import TOOL_SCHEMAS, dispatch_tool
+
+
+def test_tool_schemas_cover_all_three():
+    names = {t["function"]["name"] for t in TOOL_SCHEMAS}
+    assert names == {"bash", "update_script", "verify"}
+    for t in TOOL_SCHEMAS:
+        assert t["type"] == "function"
+        assert "parameters" in t["function"]
+
+
+def test_dispatch_bash(tmp_path):
+    s = ChatSession.new(tmp_path / "work")
+    out = dispatch_tool("bash", {"cmd": "echo hi"}, s, bash_timeout=10)
+    assert "hi" in out
+
+
+def test_dispatch_update_script(tmp_path):
+    s = ChatSession.new(tmp_path / "work")
+    out = dispatch_tool(
+        "update_script", {"code": "echo hi", "meta_patch": {"name": "n"}}, s, bash_timeout=10
+    )
+    assert s.draft.content == "echo hi"
+    assert s.draft.name == "n"
+    assert "draft updated" in out
+
+
+def test_dispatch_verify(tmp_path):
+    s = ChatSession.new(tmp_path / "work")
+    s.apply_update(code="echo ok", meta_patch=None)
+    out = dispatch_tool("verify", {}, s, bash_timeout=10)
+    assert "VERIFY PASSED" in out
+
+
+def test_dispatch_unknown_tool(tmp_path):
+    s = ChatSession.new(tmp_path / "work")
+    out = dispatch_tool("nope", {}, s, bash_timeout=10)
+    assert "unknown tool" in out.lower()

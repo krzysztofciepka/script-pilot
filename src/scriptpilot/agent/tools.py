@@ -4,6 +4,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from scriptpilot.agent.verify import verify_draft
+
 _MAX_OUTPUT = 10_000  # chars
 
 _DENY_PATTERNS = [
@@ -41,3 +43,81 @@ def run_bash(cmd: str, cwd: Path, timeout: int) -> str:
     if len(output) > _MAX_OUTPUT:
         output = output[:_MAX_OUTPUT] + "\n…[output truncated]"
     return f"exit {proc.returncode}\n{output}".rstrip()
+
+
+TOOL_SCHEMAS: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": (
+                "Run a read-oriented bash command (ls, cat, grep, …) in the "
+                "session working directory. The draft is script.sh/.py/.js there."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "cmd": {"type": "string", "description": "The bash command."}
+                },
+                "required": ["cmd"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_script",
+            "description": (
+                "Write new draft code and/or patch metadata (name, description, "
+                "type, args, env, timeout, cwd, arg_style, tags)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string", "description": "Full new script body."},
+                    "meta_patch": {
+                        "type": "object",
+                        "description": "Partial Script metadata to merge.",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "verify",
+            "description": (
+                "Verify the current draft (syntax, file/interpreter resolution, "
+                "and an optional safe run). Pass safe_run only for side-effect-free "
+                "invocations like ['--help']."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "safe_run": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional safe argv to execute, e.g. ['--help'].",
+                    }
+                },
+            },
+        },
+    },
+]
+
+
+def dispatch_tool(name: str, arguments: dict, session, *, bash_timeout: int) -> str:
+    """Execute a tool call against ``session``; return the tool result text."""
+    if name == "bash":
+        return run_bash(arguments.get("cmd", ""), session.work_dir, bash_timeout)
+    if name == "update_script":
+        return session.apply_update(
+            code=arguments.get("code"), meta_patch=arguments.get("meta_patch")
+        )
+    if name == "verify":
+        result = verify_draft(
+            session.draft.type, session.draft_path, safe_run=arguments.get("safe_run")
+        )
+        return result.summary()
+    return f"unknown tool: {name}"
