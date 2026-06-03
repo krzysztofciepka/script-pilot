@@ -45,12 +45,30 @@ class ScriptStore:
         for ext in EXTENSIONS.values():
             (self._dir / f"{script_id}{ext}").unlink(missing_ok=True)
         (self._dir / f"{script_id}.meta.json").unlink(missing_ok=True)
+        self.transcript_path(script_id).unlink(missing_ok=True)
         self._scripts.pop(script_id, None)
 
     def path_for(self, script_id: str) -> Path:
         """On-disk path of the script body. Used by executor and editor."""
         script = self._scripts[script_id]
         return self._dir / f"{script_id}{EXTENSIONS[script.type]}"
+
+    def transcript_path(self, script_id: str) -> Path:
+        return self._dir / f"{script_id}.messages.json"
+
+    def save_transcript(self, script_id: str, messages: list[dict]):
+        self._atomic_write(
+            self.transcript_path(script_id), json.dumps(messages, indent=2)
+        )
+
+    def load_transcript(self, script_id: str) -> list[dict]:
+        path = self.transcript_path(script_id)
+        if not path.exists():
+            return []
+        try:
+            return json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return []
 
     def _load(self):
         self._dir.mkdir(parents=True, exist_ok=True)
