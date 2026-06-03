@@ -166,5 +166,6 @@ class ChatScreen(ModalScreen[Script | None]):
         # Preserve the id when editing an existing script.
         if self._existing is not None:
             script.id = self._existing.id
+        self._store.save_transcript(script.id, self.session.messages)
         self.session.cleanup()
         self.dismiss(script)
