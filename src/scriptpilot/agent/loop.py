@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import Callable
@@ -69,7 +70,11 @@ async def run_agent_loop(
                 except json.JSONDecodeError:
                     args = {}
                 emit(AgentEvent("tool_started", tool=name))
-                result = dispatch_tool(name, args, session, bash_timeout=bash_timeout)
+                # dispatch_tool runs blocking subprocesses (bash/verify); off-thread
+                # it so the Textual event loop stays responsive during tool calls.
+                result = await asyncio.to_thread(
+                    dispatch_tool, name, args, session, bash_timeout=bash_timeout
+                )
                 session.messages.append(
                     {"role": "tool", "tool_call_id": tc["id"], "content": result}
                 )
