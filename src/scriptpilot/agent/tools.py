@@ -9,7 +9,7 @@ from scriptpilot.agent.verify import verify_draft
 _MAX_OUTPUT = 10_000  # chars
 
 _DENY_PATTERNS = [
-    r"\brm\s+-[a-z]*r[a-z]*f?\s+/",  # rm -rf /
+    r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+/",  # rm -rf / / -fr / -r (recursive rm of abs path)
     r"\bsudo\b",
     r"\bmkfs\b",
     r"\bshutdown\b",
