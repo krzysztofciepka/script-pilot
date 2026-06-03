@@ -454,3 +454,17 @@ class TestRunRecordCancelled:
         }
         r = RunRecord(**legacy)
         assert r.cancelled is False
+
+
+def test_appconfig_agent_defaults():
+    from scriptpilot.models import AppConfig
+    cfg = AppConfig()
+    assert cfg.agent_max_tool_calls == 25
+    assert cfg.bash_tool_timeout == 15
+
+
+def test_appconfig_agent_fields_override():
+    from scriptpilot.models import AppConfig
+    cfg = AppConfig(agent_max_tool_calls=5, bash_tool_timeout=30)
+    assert cfg.agent_max_tool_calls == 5
+    assert cfg.bash_tool_timeout == 30
