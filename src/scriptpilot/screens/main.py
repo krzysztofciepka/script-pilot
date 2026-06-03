@@ -16,7 +16,8 @@ from scriptpilot.widgets.script_list import ScriptList, ScriptSelected
 from scriptpilot.widgets.main_panel import MainPanel
 from scriptpilot.screens.edit import EditScreen
 from scriptpilot.screens.run import RunScreen
-from scriptpilot.screens.prompt import PromptScreen
+from scriptpilot.screens.chat import ChatScreen
+from scriptpilot.blackbox import get_api_key
 from scriptpilot.screens.history import HistoryScreen
 
 
@@ -158,6 +159,7 @@ class MainScreen(Screen):
             return
 
         script = self._selected_script
+        cfg = self.app._config
 
         def on_result(updated: Script | None):
             if updated:
@@ -168,7 +170,14 @@ class MainScreen(Screen):
                 self.query_one(MainPanel).show_script_details(updated, last_run)
 
         self.app.push_screen(
-            PromptScreen(script, default_model=self.app._config.default_model),
+            ChatScreen(
+                store=self._store,
+                script=script,
+                model=cfg.default_model,
+                api_key=get_api_key(),
+                max_tool_calls=cfg.agent_max_tool_calls,
+                bash_timeout=cfg.bash_tool_timeout,
+            ),
             callback=on_result,
         )
 

@@ -86,3 +86,5 @@ class AppConfig(BaseModel):
     editor: str | None = None
     scripts_dir: str | None = None
     theme: Literal["dark", "light"] = "dark"
+    agent_max_tool_calls: int = 25
+    bash_tool_timeout: int = 15

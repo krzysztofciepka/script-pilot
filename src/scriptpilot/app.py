@@ -10,7 +10,8 @@ from scriptpilot.storage import ScriptStore
 from scriptpilot.history import HistoryStore
 from scriptpilot.screens.main import MainScreen
 from scriptpilot.screens.settings import SettingsScreen
-from scriptpilot.screens.generate import GenerateScreen
+from scriptpilot.screens.chat import ChatScreen
+from scriptpilot.blackbox import get_api_key
 from scriptpilot.models import Script
 
 CONFIG_PATH = Path.home() / ".scriptpilot" / "config.json"
@@ -95,7 +96,14 @@ class ScriptPilotApp(App):
                 self.notify(f"Script '{script.name}' saved")
 
         self.push_screen(
-            GenerateScreen(default_model=self._config.default_model),
+            ChatScreen(
+                store=self._store,
+                script=None,
+                model=self._config.default_model,
+                api_key=get_api_key(),
+                max_tool_calls=self._config.agent_max_tool_calls,
+                bash_timeout=self._config.bash_tool_timeout,
+            ),
             callback=on_result,
         )
 

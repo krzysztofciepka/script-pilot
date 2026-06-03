@@ -88,6 +88,9 @@ class SettingsScreen(ModalScreen[AppConfig | None]):
             )
             yield Label(f"Scripts dir: {scripts_dir_display}")
             yield Label("[dim]edit ~/.scriptpilot/config.json to change[/dim]")
+            yield Label(f"Agent max tool calls: {self._config.agent_max_tool_calls}")
+            yield Label(f"Bash tool timeout (s): {self._config.bash_tool_timeout}")
+            yield Label("[dim]edit ~/.scriptpilot/config.json to change[/dim]")
             yield Label(f"Secrets file: {SECRETS_PATH} [{secrets_status}]")
             yield Label(
                 "[dim]One KEY=VALUE per line. Edit with your editor.[/dim]"
@@ -112,5 +115,7 @@ class SettingsScreen(ModalScreen[AppConfig | None]):
                 editor=editor_val,
                 theme=theme_val,
                 scripts_dir=self._config.scripts_dir,
+                agent_max_tool_calls=self._config.agent_max_tool_calls,
+                bash_tool_timeout=self._config.bash_tool_timeout,
             )
             self.dismiss(config)

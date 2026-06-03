@@ -1,61 +1,13 @@
 from __future__ import annotations
 
-import json as _json
 import os
-import re
-from dataclasses import dataclass
 
 import httpx
 
-from scriptpilot.models import ScriptArg
 from scriptpilot.secrets import load_secrets
 
 BASE_URL = "https://api.blackbox.ai/v1"
 API_KEY_ENV = "BLACKBOX_API_KEY"
-
-GENERATE_SYSTEM_PROMPT = (
-    "You are a script generator. You MUST output exactly two fenced blocks:\n\n"
-    "1. A code block with the script (use ```bash, ```python, or ```javascript as the fence label)\n"
-    "2. A JSON block with argument definitions and arg_style\n\n"
-    "The code must be complete, valid, and ready to run. Include brief comments where helpful.\n\n"
-    "The JSON block must have this exact format:\n"
-    "```json\n"
-    '{"args": [{"name": "arg_name", '
-    '"type": "string|integer|boolean|path|choice", '
-    '"required": true|false, "default": "value", '
-    '"choices": ["a", "b"]}], '
-    '"arg_style": "positional|flags"}\n'
-    "```\n\n"
-    "Rules:\n"
-    "- Use an empty args array if the script takes no arguments.\n"
-    "- `choices` is required iff `type == \"choice\"` and must be a non-empty list of strings; omit otherwise.\n"
-    "- `path` args receive an absolute path (relatives are resolved by ScriptPilot against the script's cwd); your script can treat them as ready-to-use file paths.\n"
-    "- When `arg_style` is `flags`, your script MUST parse arguments as `--name value` (and `--name` for booleans). When `arg_style` is `positional`, parse as `$1 $2 ...`. Pick whichever style is idiomatic for the language and the script's purpose.\n"
-    "Do NOT include any text outside these two blocks."
-)
-
-
-MODIFY_SYSTEM_PROMPT = (
-    "You are a script modifier. You will receive an existing script and an instruction "
-    "describing what to change. Output the COMPLETE updated script (not a diff). "
-    "You MUST output exactly two fenced blocks:\n\n"
-    "1. A code block with the full updated script (use ```bash, ```python, or ```javascript)\n"
-    "2. A JSON block with argument definitions and arg_style for the updated script\n\n"
-    "The JSON block must have this exact format:\n"
-    "```json\n"
-    '{"args": [{"name": "arg_name", '
-    '"type": "string|integer|boolean|path|choice", '
-    '"required": true|false, "default": "value", '
-    '"choices": ["a", "b"]}], '
-    '"arg_style": "positional|flags"}\n'
-    "```\n\n"
-    "Rules:\n"
-    "- Use an empty args array if the script takes no arguments.\n"
-    "- `choices` is required iff `type == \"choice\"` and must be a non-empty list of strings; omit otherwise.\n"
-    "- `path` args receive an absolute path (relatives are resolved by ScriptPilot against the script's cwd); your script can treat them as ready-to-use file paths.\n"
-    "- When `arg_style` is `flags`, your script MUST parse arguments as `--name value` (and `--name` for booleans). When `arg_style` is `positional`, parse as `$1 $2 ...`. Pick whichever style is idiomatic for the language and the script's purpose.\n"
-    "Do NOT include any text outside these two blocks."
-)
 
 
 class AuthenticationError(Exception):
@@ -70,18 +22,6 @@ class BlackboxConnectionError(Exception):
     """Raised when unable to reach Blackbox."""
 
 
-class MalformedResponseError(Exception):
-    """Raised when the LLM response does not match the expected format."""
-
-
-@dataclass
-class GenerationResult:
-    """Parsed LLM response containing code, argument definitions, and arg_style."""
-    code: str
-    args: list[ScriptArg]
-    arg_style: str = "positional"
-
-
 def get_api_key() -> str:
     """Resolve the Blackbox API key from env, falling back to ~/.scriptpilot/.env."""
     key = os.environ.get(API_KEY_ENV, "").strip()
@@ -90,133 +30,45 @@ def get_api_key() -> str:
     return load_secrets().get(API_KEY_ENV, "").strip()
 
 
-def parse_generation_response(text: str) -> GenerationResult:
-    """Parse an LLM response into code, argument definitions, and arg_style."""
-    blocks = re.findall(r"```(\w*)\n(.*?)```", text, re.DOTALL)
-    if not blocks:
-        raise MalformedResponseError("No fenced code blocks found")
+async def chat_completion(
+    messages: list[dict],
+    model: str,
+    *,
+    api_key: str,
+    tools: list[dict] | None = None,
+    timeout: int = 120,
+) -> dict:
+    """POST a chat-completion request; return the assistant message dict.
 
-    code = None
-    parsed = None
-
-    for lang, content in blocks:
-        if lang == "json":
-            try:
-                obj = _json.loads(content.strip())
-                if isinstance(obj, dict) and "args" in obj:
-                    parsed = obj
-            except _json.JSONDecodeError:
-                raise MalformedResponseError("Invalid JSON in args block")
-        elif code is None:
-            code = content.strip()
-
-    if code is None:
-        raise MalformedResponseError("No code block found")
-    if parsed is None:
-        raise MalformedResponseError("No JSON block with 'args' key found")
+    The returned dict has ``role`` and ``content`` and may carry ``tool_calls``
+    when the model invokes tools. Raises AuthenticationError / RateLimitError /
+    BlackboxConnectionError on the corresponding failures.
+    """
+    payload: dict = {"model": model, "messages": messages}
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
 
     try:
-        args = [ScriptArg(**a) for a in parsed["args"]]
-    except Exception as e:
-        raise MalformedResponseError(f"Invalid arg definition: {e}") from e
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{BASE_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=timeout,
+            )
+    except (httpx.ConnectError, httpx.TimeoutException) as e:
+        raise BlackboxConnectionError(f"Could not reach Blackbox: {e}") from e
 
-    arg_style = parsed.get("arg_style", "positional")
-    if arg_style not in ("positional", "flags"):
-        raise MalformedResponseError(
-            f"Invalid arg_style {arg_style!r} (must be 'positional' or 'flags')"
-        )
+    if response.status_code == 401:
+        raise AuthenticationError("Invalid API key")
+    if response.status_code == 429:
+        raise RateLimitError("Rate limited by Blackbox")
+    if response.status_code >= 500:
+        raise BlackboxConnectionError("Blackbox server error")
+    response.raise_for_status()
 
-    return GenerationResult(code=code, args=args, arg_style=arg_style)
-
-
-def strip_markdown_fences(text: str) -> str:
-    """Remove markdown code fences if present."""
-    pattern = r"^```(?:\w+)?\n(.*?)```$"
-    match = re.match(pattern, text.strip(), re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return text.strip()
-
-
-class BlackboxClient:
-    """Async client for the blackbox.ai chat completion API."""
-
-    def __init__(self, api_key: str):
-        self._api_key = api_key
-
-    async def generate_script(
-        self, description: str, language: str, model: str
-    ) -> GenerationResult:
-        """Generate a script from a natural language description."""
-        messages = [
-            {"role": "system", "content": GENERATE_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    f"Write a {language} script that does the following:\n\n"
-                    f"{description}"
-                ),
-            },
-        ]
-        return await self._call_with_retry(messages, model)
-
-    async def modify_script(
-        self,
-        current_code: str,
-        instruction: str,
-        language: str,
-        model: str,
-    ) -> GenerationResult:
-        """Modify an existing script based on a natural language instruction."""
-        messages = [
-            {"role": "system", "content": MODIFY_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    f"Here is the current {language} script:\n\n"
-                    f"```{language}\n{current_code}\n```\n\n"
-                    f"Modification instruction: {instruction}"
-                ),
-            },
-        ]
-        return await self._call_with_retry(messages, model)
-
-    async def _call_with_retry(
-        self, messages: list[dict], model: str, max_retries: int = 3
-    ) -> GenerationResult:
-        """Call the API and parse response, retrying on malformed output."""
-        last_error = None
-        for _ in range(max_retries):
-            content = await self._chat(messages, model)
-            try:
-                return parse_generation_response(content)
-            except MalformedResponseError as e:
-                last_error = e
-                continue
-        raise last_error
-
-    async def _chat(self, messages: list[dict], model: str) -> str:
-        """Make a chat completion request and return the content string."""
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{BASE_URL}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self._api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={"model": model, "messages": messages},
-                    timeout=60,
-                )
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
-            raise BlackboxConnectionError(f"Could not reach Blackbox: {e}") from e
-
-        if response.status_code == 401:
-            raise AuthenticationError("Invalid API key")
-        if response.status_code == 429:
-            raise RateLimitError("Rate limited by Blackbox")
-        if response.status_code >= 500:
-            raise BlackboxConnectionError("Blackbox server error")
-        response.raise_for_status()
-
-        return response.json()["choices"][0]["message"]["content"]
+    return response.json()["choices"][0]["message"]
