@@ -1,6 +1,6 @@
 # ScriptPilot
 
-A terminal UI for creating, managing, and executing automation scripts (bash, Python, JavaScript) with optional AI-powered script generation via [blackbox.ai](https://www.blackbox.ai/).
+A terminal UI for creating, managing, and executing automation scripts (bash, Python, JavaScript) with an optional AI agent that builds scripts conversationally via [blackbox.ai](https://www.blackbox.ai/).
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -23,7 +23,7 @@ A terminal UI for creating, managing, and executing automation scripts (bash, Py
 - **Script management** — create, edit, and delete bash, Python, and JavaScript scripts
 - **Script execution** — run scripts with real-time streaming output, exit codes, and configurable timeouts
 - **Argument support** — define typed arguments (string, integer, boolean) with defaults; interactive input form before execution
-- **AI generation** — describe what you want in plain English, pick a language, and let an LLM write the script via blackbox.ai
+- **Conversational AI builder** — chat with an agent that asks clarifying questions, edits the draft across turns, and self-verifies the script before you save it (via blackbox.ai)
 - **Persistence** — scripts and settings saved to `~/.scriptpilot/` across sessions
 - **Light/dark themes** — toggle with `t`
 
@@ -61,15 +61,27 @@ This downloads the latest release asset, verifies its sha256 against the GitHub 
 
 For `uv tool` installs, run `uv tool upgrade scriptpilot` instead.
 
-## AI Generation (Optional)
+## Conversational Script Builder (Optional)
 
-To use AI-powered script generation, set your [blackbox.ai](https://www.blackbox.ai/) API key — either as an env var or in `~/.scriptpilot/.env`:
+Press `g` to build a new script by chatting with the agent, or `p` to refine the
+selected script. The agent asks clarifying questions when a request is
+underspecified (e.g. the GCP project or where the credentials JSON lives), turns
+your answers into real script arguments and environment variables, edits a draft
+across turns, and **self-verifies** it — syntax check, interpreter/file
+resolution, and an optional safe run — before you Save. Type `/clear` in the
+input box to restart the conversation. Your conversation is saved per script, so
+reopening a script with `p` restores the prior chat.
+
+To enable it, set your [blackbox.ai](https://www.blackbox.ai/) API key — either as
+an env var or in `~/.scriptpilot/.env`:
 
 ```bash
 export BLACKBOX_API_KEY="sk-..."
 ```
 
-The default model is `blackboxai/minimax/minimax-m2.5`. You can change it in Settings (`s`).
+The default model is `blackboxai/minimax/minimax-m2.5`. You can change it, and the
+agent's tool-call cap and bash-tool timeout, in `~/.scriptpilot/config.json`
+(model is also editable in Settings, `s`).
 
 ## Reproducible Execution
 
@@ -120,7 +132,8 @@ Change `Python command` in Settings to `python3` if you don't have [`uv`](https:
 | `n` | New script |
 | `e` | Edit selected script |
 | `d` | Delete selected script |
-| `g` | Generate script with AI |
+| `g` | Build a new script with the AI agent (chat) |
+| `p` | Refine the selected script with the AI agent (chat) |
 | `s` | Settings |
 | `t` | Toggle light/dark theme |
 | `?` / `F1` | Open in-app help |
