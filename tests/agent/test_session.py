@@ -68,3 +68,13 @@ def test_to_script_returns_draft_copy(tmp_path):
     script = s.to_script()
     assert script.name == "n"
     assert script.content == "echo hi"
+
+
+def test_apply_update_strips_leading_dashes_from_arg_names(tmp_path):
+    s = ChatSession.new(tmp_path / "work")
+    s.apply_update(
+        code=None,
+        meta_patch={"args": [{"name": "--project", "type": "string"},
+                             {"name": "-r", "type": "string"}]},
+    )
+    assert [a.name for a in s.draft.args] == ["project", "r"]

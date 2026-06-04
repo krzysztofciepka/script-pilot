@@ -21,6 +21,19 @@ _PATCHABLE = {
 }
 
 
+def _normalize_arg(a) -> ScriptArg:
+    """Coerce a dict to ScriptArg and strip leading dashes from its name.
+
+    ScriptPilot frames flag-style args itself (``--{name}``), so an arg name
+    must be the bare logical name; a model that declares ``--project`` would
+    otherwise produce ``----project`` at run time.
+    """
+    arg = ScriptArg(**a) if isinstance(a, dict) else a
+    if arg.name.startswith("-"):
+        arg = arg.model_copy(update={"name": arg.name.lstrip("-")})
+    return arg
+
+
 class ChatSession:
     """A single conversational script-building session.
 
@@ -61,7 +74,7 @@ class ChatSession:
                 if key not in _PATCHABLE:
                     continue
                 if key == "args":
-                    value = [ScriptArg(**a) if isinstance(a, dict) else a for a in value]
+                    value = [_normalize_arg(a) for a in value]
                 data[key] = value
         if code is not None:
             data["content"] = code
